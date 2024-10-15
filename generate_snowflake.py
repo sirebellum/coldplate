@@ -48,4 +48,4 @@ def image_to_boolean_array(image_path, output_shape=(128, 64), threshold=128, ou
 
 if __name__ == "__main__":
     # Example usage:
-    image_to_boolean_array("caution.jpg", output_shape=(64, 64), threshold=200, output_file="output_image.bmp")
+    image_to_boolean_array("snowflake.jpg", output_shape=(75, 75), threshold=200, output_file="output_image.bmp")
