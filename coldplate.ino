@@ -50,7 +50,6 @@ Adafruit_BME280 bme_cold_side; // Cold side sensor (I2C)
 Adafruit_BME280 bme_cat_pad;   // Cat pad temperature sensor (I2C)
 
 // Timing variables
-#define REFRESH_RATE 60 // Refresh rate in Hz
 unsigned long last_detection_time = 0;
 unsigned long last_update_time = millis();
 int16_t refresh_rate = -1;
@@ -439,10 +438,6 @@ void loop(void) {
     // Update refresh rate in hz
     refresh_rate = 1000 / (millis() - last_update_time);
 
-    // Delay until refresh rate is met
-    while (millis() - last_update_time < 1000 / REFRESH_RATE)
-        ;
-    
     // Update the last update time
     last_update_time = millis();
 }
