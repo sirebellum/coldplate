@@ -62,6 +62,8 @@ int history_index = 0;
 
 // Food detection variables
 #define FOOD_DETECT_PERCENTILE 95 // 95th percentile
+#define FOOD_DETECT_DURATION (1000 * 60 * 60) // 1 hour
+unsigned long last_food_detect_time = 0;
 
 // Maintain a buffer of recent derivatives to calculate a dynamic threshold
 int32_t derivative_history[MOVING_AVG_WINDOW] = {0};
@@ -324,8 +326,15 @@ void loop(void) {
     // Update the history index
     history_index = (history_index + 1) % MOVING_AVG_WINDOW;
 
-    // Detect food
-    bool food_detected = detect_food();
+    // Detect Food
+    bool food_detected = false;
+    if (millis() - last_food_detect_time < FOOD_DETECT_DURATION) {
+        food_detected = true;
+    } else {
+        food_detected = detect_food();
+        if (food_detected)
+            last_food_detect_time = millis();
+    }
 
     // Update the display
     if (food_detected) {
