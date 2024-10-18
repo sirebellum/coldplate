@@ -5,7 +5,7 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/ndarray.h>
-#include <vector>
+#include <opencv2/opencv.hpp>
 #include <string>
 
 class TVMCNNModel {
@@ -31,14 +31,12 @@ public:
     bool load_model(const std::string& graph_path, const std::string& lib_path, const std::string& params_path);
 
     /**
-     * @brief Set the input for the model.
+     * @brief Set the input for the model using an OpenCV matrix.
      * 
-     * @param input_data 2D float array containing the input data.
-     * @param height The height of the 2D array.
-     * @param width The width of the 2D array.
+     * @param input_image cv::Mat containing the input data (expected to be CV_32FC1).
      * @return True if the input was successfully set, false otherwise.
      */
-    bool set_input(const std::vector<std::vector<float>>& input_data, int height, int width);
+    bool set_input(const cv::Mat& input_image);
 
     /**
      * @brief Run the inference using the loaded model.
@@ -48,11 +46,12 @@ public:
     bool run_inference();
 
     /**
-     * @brief Get the output of the inference.
+     * @brief Get the output of the inference as an OpenCV matrix.
      * 
-     * @return A vector of floats containing the output.
+     * @param output_index Index of the output to retrieve.
+     * @return cv::Mat containing the output data.
      */
-    std::vector<float> get_output(int output_index);
+    cv::Mat get_output(int output_index);
 
 private:
     tvm::runtime::PackedFunc set_input_func;
@@ -60,7 +59,7 @@ private:
     tvm::runtime::PackedFunc get_output_func;
     tvm::runtime::NDArray input_tensor;
     tvm::runtime::NDArray output_tensor;
-    DLDevice dev = {kDLCPU, 0};;
+    DLDevice dev = {kDLCPU, 0};
 
     int input_height;
     int input_width;

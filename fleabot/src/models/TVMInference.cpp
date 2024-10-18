@@ -4,6 +4,7 @@
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/serializer.h>
 #include <tvm/runtime/device_api.h>
+#include <opencv2/opencv.hpp>
 
 TVMCNNModel::TVMCNNModel() : input_height(0), input_width(0) {}
 
@@ -41,16 +42,22 @@ bool TVMCNNModel::load_model(const std::string& graph_path, const std::string& l
     return true;
 }
 
-bool TVMCNNModel::set_input(const std::vector<std::vector<float>>& input_data, int height, int width) {
-    input_height = height;
-    input_width = width;
-    allocate_input_tensor(height, width);
+bool TVMCNNModel::set_input(const cv::Mat& input_image) {
+    // Ensure the input image is of the expected type (e.g., CV_32FC1)
+    if (input_image.empty() || input_image.type() != CV_32FC1) {
+        std::cerr << "Invalid input image. Expected non-empty CV_32FC1 matrix." << std::endl;
+        return false;
+    }
+
+    input_height = input_image.rows;
+    input_width = input_image.cols;
+    allocate_input_tensor(input_height, input_width);
 
     // Copy data into the input tensor
     auto* data_ptr = static_cast<float*>(input_tensor->data);
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            data_ptr[i * width + j] = input_data[i][j];
+    for (int i = 0; i < input_height; ++i) {
+        for (int j = 0; j < input_width; ++j) {
+            data_ptr[i * input_width + j] = input_image.at<float>(i, j);
         }
     }
 
@@ -76,22 +83,23 @@ bool TVMCNNModel::run_inference() {
     return true;
 }
 
-std::vector<float> TVMCNNModel::get_output(int output_index) {
+cv::Mat TVMCNNModel::get_output(int output_index) {
     try {
         tvm::runtime::NDArray output = get_output_func(output_index);
         int64_t size = output.Shape()[0];
 
-        std::vector<float> result(size);
+        // Create a cv::Mat to hold the output, assuming a 1D output
+        cv::Mat result(1, size, CV_32F);
         auto* output_data = static_cast<float*>(output->data);
 
         for (int64_t i = 0; i < size; ++i) {
-            result[i] = output_data[i];
+            result.at<float>(0, i) = output_data[i];
         }
 
         return result;
     } catch (const std::runtime_error& e) {
         std::cerr << "Failed to retrieve output: " << e.what() << std::endl;
-        return {};
+        return cv::Mat();
     }
 }
 

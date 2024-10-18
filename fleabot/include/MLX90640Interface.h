@@ -3,9 +3,9 @@
 
 #include <cstdint>
 #include <thread>
-#include <vector>
 #include <atomic>
 #include <mutex>
+#include <opencv2/opencv.hpp>
 
 class MLX90640 {
 public:
@@ -18,8 +18,8 @@ public:
     // Stops the data acquisition thread
     void stop();
 
-    // Gets the latest frame data (scaled between 0 and 1)
-    bool getFrameData(std::vector<float>& frameData);
+    // Gets the latest frame data (scaled between 0 and 1) as a cv::Mat
+    bool getFrameData(cv::Mat& frameDataOut);
 
 private:
     // I2C related
@@ -31,8 +31,8 @@ private:
     std::thread acquisitionThread;
     std::atomic<bool> running;
 
-    // Raw data storage
-    std::vector<float> frameData;
+    // Raw data storage using OpenCV's cv::Mat
+    cv::Mat frameData;
 
     // Mutex for thread-safe access to frameData
     std::mutex dataMutex;

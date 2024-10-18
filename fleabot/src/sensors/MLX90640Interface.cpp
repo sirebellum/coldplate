@@ -4,9 +4,10 @@
 #include <unistd.h>
 #include <iostream>
 #include <chrono>
+#include <opencv2/opencv.hpp>
 
 MLX90640::MLX90640(int i2cBus, uint8_t i2cAddress)
-    : i2cBus(i2cBus), i2cAddress(i2cAddress), running(false), frameData(32 * 24, 0.0f) {}
+    : i2cBus(i2cBus), i2cAddress(i2cAddress), running(false), frameData(24, 32, CV_32FC1, cv::Scalar(0.0f)) {}
 
 MLX90640::~MLX90640() {
     stop();
@@ -34,12 +35,12 @@ void MLX90640::stop() {
     }
 }
 
-bool MLX90640::getFrameData(std::vector<float>& frameData) {
+bool MLX90640::getFrameData(cv::Mat& frameDataOut) {
     std::lock_guard<std::mutex> lock(dataMutex); // Ensure thread-safe access
-    if (this->frameData.empty()) {
+    if (frameData.empty()) {
         return false;
     }
-    memccpy(frameData.data(), this->frameData.data(), sizeof(float), this->frameData.size());
+    frameData.copyTo(frameDataOut);
     return true;
 }
 
@@ -64,7 +65,9 @@ bool MLX90640::readFrame() {
     {
         std::lock_guard<std::mutex> lock(dataMutex); // Ensure thread-safe access
         for (int i = 0; i < 32 * 24; ++i) {
-            frameData[i] = static_cast<float>(rawData[i]) / 65535.0f; // Scale to [0, 1]
+            int row = i / 32;
+            int col = i % 32;
+            frameData.at<float>(row, col) = static_cast<float>(rawData[i]) / 65535.0f; // Scale to [0, 1]
         }
     }
 
