@@ -40,7 +40,7 @@ def save_numpy_to_binary(arr, filename="centroids.bin"):
 def main():
     # Load the dataset
     simulator = MLX90640Simulator()
-    images = simulator.generate_batch(1024)
+    images = simulator.generate_batch(1024 * 10000)
 
     # Load the model
     model = CNNAutoencoder("model_yamls/default.yaml")

@@ -57,7 +57,7 @@ def training_loop(model, simulator, batch_size, epochs):
 if __name__ == "__main__":
     
     # Load the model
-    model = CNNAutoencoder("model_yamls/default.yaml")
+    model = CNNAutoencoder("model_yamls/depthwise.yaml")
 
     # Print model summary
     print(model)

@@ -1,17 +1,25 @@
 model:
-  name: "cnn_autoencoder"
+  name: "cnn_autoencoder_mobile"
   input_shape: [1, 24, 32]
   
   encoder:
     layers:
       - type: "Conv2D"
         name: "conv1"
-        filters: 32
+        filters: 16
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
         activation: "relu"
         input_shape: [1, 24, 32]  # Only needed for the first layer
+
+      - type: "Conv2D"
+        name: "conv1"
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+        filters: 32
 
       - type: "MaxPooling2D"
         name: "pool1"
@@ -21,11 +29,11 @@ model:
 
       - type: "Conv2D"
         name: "conv2"
-        filters: 64
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
         activation: "relu"
+        filters: 64
 
       - type: "MaxPooling2D"
         name: "pool2"
@@ -35,11 +43,11 @@ model:
 
       - type: "Conv2D"
         name: "conv3"
-        filters: 128
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
         activation: "relu"
+        filters: 128
 
       - type: "MaxPooling2D"
         name: "pool3"
@@ -49,42 +57,49 @@ model:
 
       - type: "Conv2D"
         name: "conv4"
-        filters: 256
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
         activation: "relu"
+        filters: 256
 
-      - type: "Flatten"
-        name: "flatten"
+      - type: "MaxPooling2D"
+        name: "pool4"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
 
-      - type: "Dense"
-        name: "dense_latent"
-        units: 3072
-        units_out: 1536
-        activation: "sigmoid"
+      - type: "Reshape"
+        name: "reshape_latent"
+        target_shape: [512]
+
+  kmeans:
+    layers:
+        
+      - type: "KMeans"
+        name: "kmeans"
+        num_clusters: 32
+        num_features: 512
 
   decoder:
     layers:
-      - type: "Reshape"
-        name: "reshape"
-        target_shape: [128, 3, 4]
-
-      - type: "Conv2DTranspose"
-        name: "deconv1"
-        filters: 64
-        kernel_size: [3, 3]
-        stride: [1, 1]
-        padding: "same"
+      - type: "Dense"
+        name: "dense_reshape"
+        units: 32
+        units_out: 768
         activation: "relu"
+
+      - type: "Reshape"
+        name: "reshape_decoder"
+        target_shape: [64, 3, 4]
 
       - type: "UpSampling2D"
         name: "upsample1"
         size: [2, 2]
 
-      - type: "Conv2DTranspose"
-        name: "deconv2"
-        filters: 32
+      - type: "Conv2D"
+        name: "conv_reduce1"
+        filters: 128
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
@@ -94,9 +109,9 @@ model:
         name: "upsample2"
         size: [2, 2]
 
-      - type: "Conv2DTranspose"
-        name: "deconv3"
-        filters: 1
+      - type: "Conv2D"
+        name: "conv_reduce2"
+        filters: 64
         kernel_size: [3, 3]
         stride: [1, 1]
         padding: "same"
@@ -106,7 +121,7 @@ model:
         name: "upsample3"
         size: [2, 2]
 
-      - type: "Conv2DTranspose"
+      - type: "Conv2D"
         name: "output_layer"
         filters: 1
         kernel_size: [3, 3]
@@ -115,12 +130,12 @@ model:
         activation: "sigmoid"
 
   hyperparameters:
-    batch_size: 32
-    epochs: 100
-    learning_rate: 0.001
+    batch_size: 64
+    epochs: 200
+    learning_rate: 0.0005
     optimizer: "adam"
-    loss_function: "mse"
+    loss_function: "binary_crossentropy"
 
   weights:
     load_weights: false
-    weights_path: "path/to/weights.h5"
+    weights_path: "path/to/weights_v2.h5"
