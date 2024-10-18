@@ -585,6 +585,10 @@ uint8_t adjust_fan_speed(int32_t hot_temp) {
         pwm_value = (uint8_t)((hot_temp - CAT_PAD_TEMP_MIN) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN) * 255);
     }
 
+    if (hot_temp == 0) {
+        pwm_value = 128;
+    }
+
     OCR0A = pwm_value; // Set PWM value for the fan (Pin 6)
     return pwm_value;
 }
