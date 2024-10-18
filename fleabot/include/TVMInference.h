@@ -52,15 +52,15 @@ public:
      * 
      * @return A vector of floats containing the output.
      */
-    std::vector<float> get_output();
+    std::vector<float> get_output(int output_index);
 
 private:
-    tvm::runtime::Module mod_syslib;
     tvm::runtime::PackedFunc set_input_func;
     tvm::runtime::PackedFunc run_func;
     tvm::runtime::PackedFunc get_output_func;
     tvm::runtime::NDArray input_tensor;
     tvm::runtime::NDArray output_tensor;
+    DLDevice dev = {kDLCPU, 0};;
 
     int input_height;
     int input_width;

@@ -1,4 +1,4 @@
-#include "KMeans.h"
+#include "KMeansClustering.h"
 #include <fstream>
 #include <cmath>
 #include <thread>
@@ -18,12 +18,24 @@ void KMeans::loadCentroids(const std::string& filePath) {
         throw std::runtime_error("Unable to open centroid file");
     }
 
+    // Optional: Check if the file size matches the expected size
+    file.seekg(0, std::ios::end);
+    std::streamsize fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    if (fileSize != static_cast<std::streamsize>(num_centroids * vector_size * sizeof(float))) {
+        throw std::runtime_error("Centroid file size does not match the expected dimensions.");
+    }
+
     centroids.resize(num_centroids, std::vector<float>(vector_size));
     for (int i = 0; i < num_centroids; ++i) {
         file.read(reinterpret_cast<char*>(centroids[i].data()), vector_size * sizeof(float));
+        
+        // Ensure that the correct number of bytes was read
+        if (file.gcount() != vector_size * sizeof(float)) {
+            throw std::runtime_error("Error reading centroid data from file.");
+        }
     }
-
-    file.close();
 }
 
 // Function to compute the Euclidean distance between two vectors

@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 class MLX90640 {
 public:
@@ -18,7 +19,7 @@ public:
     void stop();
 
     // Gets the latest frame data (scaled between 0 and 1)
-    std::vector<float> getFrameData();
+    bool getFrameData(std::vector<float>& frameData);
 
 private:
     // I2C related
@@ -32,6 +33,9 @@ private:
 
     // Raw data storage
     std::vector<float> frameData;
+
+    // Mutex for thread-safe access to frameData
+    std::mutex dataMutex;
 
     // Initializes the I2C connection
     bool initialize();

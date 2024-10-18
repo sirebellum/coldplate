@@ -1,7 +1,6 @@
-#include "MLX90640.h"
+#include "MLX90640Interface.h"
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
 #include <unistd.h>
 #include <iostream>
 #include <chrono>
@@ -35,8 +34,13 @@ void MLX90640::stop() {
     }
 }
 
-std::vector<float> MLX90640::getFrameData() {
-    return frameData; // Return the latest frame data
+bool MLX90640::getFrameData(std::vector<float>& frameData) {
+    std::lock_guard<std::mutex> lock(dataMutex); // Ensure thread-safe access
+    if (this->frameData.empty()) {
+        return false;
+    }
+    memccpy(frameData.data(), this->frameData.data(), sizeof(float), this->frameData.size());
+    return true;
 }
 
 void MLX90640::acquisitionLoop() {
@@ -57,8 +61,11 @@ bool MLX90640::readFrame() {
     }
 
     // Process and scale the raw data between 0 and 1
-    for (int i = 0; i < 32 * 24; ++i) {
-        frameData[i] = static_cast<float>(rawData[i]) / 65535.0f; // Scale to [0, 1]
+    {
+        std::lock_guard<std::mutex> lock(dataMutex); // Ensure thread-safe access
+        for (int i = 0; i < 32 * 24; ++i) {
+            frameData[i] = static_cast<float>(rawData[i]) / 65535.0f; // Scale to [0, 1]
+        }
     }
 
     return true;
@@ -74,9 +81,10 @@ bool MLX90640::openI2C() {
         return false;
     }
 
+    #define I2C_SLAVE 0x0703
     if (ioctl(i2cFileDescriptor, I2C_SLAVE, i2cAddress) < 0) {
-        std::cerr << "Failed to set I2C address to " << static_cast<int>(i2cAddress) << std::endl;
-        closeI2C();
+        std::cerr << "Failed to acquire bus access and/or talk to slave." << std::endl;
+        close(i2cFileDescriptor);
         return false;
     }
 

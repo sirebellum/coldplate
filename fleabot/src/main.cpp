@@ -1,60 +1,76 @@
-#include <thread>
-#include <atomic>
-#include "MLX90640Interface.h"
 #include "TVMInference.h"
 #include "KMeansClustering.h"
-#include "Speaker.h"
+#include "UsbCamera.h"
+#include "MLX90640Interface.h"
 
-// Global flag to indicate when a new frame is available
-std::atomic<bool> new_frame_available(false);
-MLX90640Interface irSensor;
-TVMInference tvmModel;
-KMeansClustering kmeans;
-Speaker speaker;
-
-// Function that runs in a separate thread to acquire IR data
-void acquire_data() {
-    while (true) {
-        // Acquire the latest IR frame
-        irSensor.acquireFrame();
-        
-        // Notify the main loop that a new frame is available
-        new_frame_available.store(true);
-        
-        // Simulate a delay to avoid rapid polling
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-}
+// MLX90640 irSensor(1, 0x33);
+UsbCamera imageSensor(0, 640, 480, 30);
+TVMCNNModel tvmModel;
+KMeans kmeans("lib/centroids.bin", 3, 1536);
+MLX90640 irSensor(1, 0x33);
 
 int main() {
-    // Start the data acquisition in a separate thread
-    std::thread acquisition_thread(acquire_data);
+    // Initialize the TVM model
+    tvmModel.load_model("lib/model_graph.json", "lib/model_lib.so", "lib/model_params.params");
+
+    // Open the camera
+    if (!imageSensor.openCamera()) {
+        std::cerr << "Error opening camera" << std::endl;
+        return 1;
+    }
+
+    // Start the MLX90640 sensor
+    irSensor.start();
 
     // Main processing loop
     while (true) {
-        // Wait until a new frame is available
-        if (new_frame_available.load()) {
-            new_frame_available.store(false);  // Reset the flag
 
-            // Get the most recent frame from the IR sensor
-            auto ir_frame = irSensor.getFrameData();
-
-            // Run the frame through the TVM model
-            auto inference_result = tvmModel.runInference(ir_frame);
-
-            // Perform KMeans clustering on the inference result
-            auto cluster_result = kmeans.runClustering(inference_result);
-
-            // Based on the cluster result, play a sound
-            speaker.playSound(cluster_result);
+        // Get the latest frame from the IR sensor
+        std::vector<float> frameData;
+        if (!irSensor.getFrameData(frameData)) {
+            std::cerr << "Error getting frame data" << std::endl;
+            continue;
         }
 
-        // Simulate a short delay to avoid excessive CPU usage in the main loop
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Get the latest frame from the camera
+        cv::Mat frame;
+        if (!imageSensor.getLatestFrame(frame)) {
+            std::cerr << "Error getting frame" << std::endl;
+            continue;
+        }
+
+        // Convert the frame data to a 24x32 matrix
+        std::vector<std::vector<float>> input_data(24, std::vector<float>(32));
+        for (int i = 0; i < 24; ++i) {
+            for (int j = 0; j < 32; ++j) {
+                input_data[i][j] = frameData[i * 32 + j];
+            }
+        }
+
+        // Set the input for the TVM model
+        if (!tvmModel.set_input(input_data, 24, 32)) {
+            std::cerr << "Error setting input" << std::endl;
+            continue;
+        }
+
+        // Display the frame
+        cv::imshow("Frame", frame);
+        cv::waitKey(1);
+
+        // Run the frame through the TVM model
+        auto inference_result = tvmModel.run_inference();
+
+        // Check if the inference was successful
+        if (!inference_result) {
+            std::cerr << "Error running inference" << std::endl;
+            continue;
+        }
+
+        // Get the output of the inference
+        auto output = tvmModel.get_output(0);
+
+        // Perform KMeans clustering on the inference result
+        auto cluster_result = kmeans.assignToCluster(output);
     }
-
-    // Join the acquisition thread (though this may never be reached)
-    acquisition_thread.join();
-
     return 0;
 }
