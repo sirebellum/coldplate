@@ -47,6 +47,17 @@
 #define YELLOW_HEIGHT 16 // Height of the yellow bar on the display
 #define BLUE_HEIGHT SCREEN_HEIGHT - YELLOW_HEIGHT // Height of the blue bar on the display
 
+#define START_BYTE 0x02
+#define END_BYTE 0x03
+
+enum MessageType {
+    PING = 0x01,
+    COMMAND = 0x02,
+    DATA = 0x03,
+    RESPONSE = 0x04,
+    ERROR = 0x05
+};
+
 // Create an SSD1306 display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
@@ -67,6 +78,9 @@ int num_derivatives = 0;
 // Ultrasonic time tracking
 unsigned long ultrasonic_start_time = 0;
 unsigned long ultrasonic_end_time = 0;
+
+// Cat detection
+bool cat_detected = false;
 
 // Splash screen stuff
 #define SPLASH_HEIGHT 48
@@ -276,18 +290,24 @@ const uint16_t ultrasonic_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM =
 void pwm_init();
 void adc_init();
 uint16_t adc_read(uint8_t channel);
-uint16_t adjust_teg_power(int32_t current_temp, bool food_detected);
+uint16_t adjust_teg_power(int32_t current_temp, bool cat_detected);
 uint8_t adjust_pump_speed(int32_t temp_diff);
 uint8_t adjust_fan_speed(int32_t hot_temp);
 void ultrasonic_stop();
 void ultrasonic_start();
-void check_ultrasonic_cleaning(bool food_detected);
+void check_ultrasonic_cleaning(bool cat_detected);
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16]);
 void drawBanner(String message);
 void drawSplashScreen(uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16]);
+void processIncomingMessage();
+void sendResponse(uint8_t message_type, uint8_t message_id, uint8_t* data, uint8_t data_length);
+void sendError(uint8_t message_id, uint8_t error_code);
 
 bool sht31_detected = false;
 void setup() {
+    Serial.begin(9600);
+    Serial.setTimeout(200);
+
     Wire.begin();
     Wire.setClock(100000);
     pinMode(LED_BUILTIN, OUTPUT);
@@ -350,11 +370,11 @@ void loop(void) {
     negative_voltage /= TEG_SAMPLES;
     int32_t teg_voltage = positive_voltage - negative_voltage;
 
-    // Detect Food
-    bool food_detected = true;
+    // Communicate over uart for cat detection
+    processIncomingMessage();
 
     // Adjust TEG power, pump speed, and fan speed based on temperature readings
-    uint8_t teg_pwm_value = adjust_teg_power(cold_temp, food_detected);
+    uint8_t teg_pwm_value = adjust_teg_power(cold_temp, cat_detected);
     uint8_t pump_pwm_value = adjust_pump_speed(hot_temp - cold_temp);
     uint8_t fan_pwm_value = adjust_fan_speed(hot_temp);
 
@@ -366,28 +386,27 @@ void loop(void) {
     history_index = (history_index + 1) % MOVING_AVG_WINDOW;
 
     // Update the display
-    // if (food_detected) {
-    //     display_splash_screen("FOOD DETECTED", food_splashscreen);
-    // } else if (millis() - ultrasonic_start_time < ULTRASONIC_DURATION) {
-    //     display_splash_screen("ULTRASONIC CLEANING", ultrasonic_splashscreen);
-    // } else {
-    //     display_splash_screen("COOLING", snowflake_splashscreen);
-    // }
-    display_splash_screen("COOLING", snowflake_splashscreen);
+    if (cat_detected) {
+        display_splash_screen("CAT DETECTED", food_splashscreen);
+    } else if (millis() - ultrasonic_start_time < ULTRASONIC_DURATION) {
+        display_splash_screen("ULTRASONIC CLEANING", ultrasonic_splashscreen);
+    } else {
+        display_splash_screen("COOLING", snowflake_splashscreen);
+    }
 
     // Check ultrasonic cleaning status
-    check_ultrasonic_cleaning(food_detected);
+    check_ultrasonic_cleaning(cat_detected);
 }
 
 // Function to time the ultrasonic cleaning process
-void check_ultrasonic_cleaning(bool food_detected) {
+void check_ultrasonic_cleaning(bool cat_detected) {
     // Get time since last ultrasonic cleaning
     unsigned long current_time = millis();
     unsigned long time_since_stop = current_time - ultrasonic_end_time;
     unsigned long time_since_start = current_time - ultrasonic_start_time;
 
     // Stop until food not detected
-    if (food_detected) {
+    if (cat_detected) {
         ultrasonic_stop();
         ultrasonic_end_time = current_time;
     }
@@ -516,7 +535,7 @@ uint16_t adc_read(uint8_t channel) {
     return ADC;
 }
 
-uint16_t adjust_teg_power(int32_t cold_temp, bool food_detected) {
+uint16_t adjust_teg_power(int32_t cold_temp, bool cat_detected) {
     uint16_t pwm_value = 0;
 
     // Calculate the dew point
@@ -528,7 +547,7 @@ uint16_t adjust_teg_power(int32_t cold_temp, bool food_detected) {
 
     // Adjust TEG power based on cold side temperature
     // If food is not detected, focus on keeping the cold side temperature right above the dew point
-    if (!food_detected) {
+    if (!cat_detected) {
         if (cold_temp < dew_point) {
             pwm_value = 0; // If the cold side temperature is below the dew point, turn off the TEG
         } else {
@@ -547,9 +566,6 @@ uint16_t adjust_teg_power(int32_t cold_temp, bool food_detected) {
 
         }
     }
-
-    // Temporarily step down the pwm
-    pwm_value *= 0.69;
 
     OCR1B = pwm_value; // Set PWM value for the TEG (Pin 10)
     return pwm_value;
@@ -591,4 +607,101 @@ uint8_t adjust_fan_speed(int32_t hot_temp) {
 
     OCR0A = pwm_value; // Set PWM value for the fan (Pin 6)
     return pwm_value;
+}
+
+void processIncomingMessage() {
+    if (Serial.read() != START_BYTE) {
+        sendError("Invalid Start Byte");
+        return;
+    }
+
+    uint8_t messageType = Serial.read();
+    uint8_t payloadLength = Serial.read();
+
+    uint8_t payload[payloadLength];
+    Serial.readBytes(payload, payloadLength);
+
+    uint8_t receivedChecksum = Serial.read();
+    uint8_t calculatedChecksum = messageType ^ payloadLength;
+    for (uint8_t i = 0; i < payloadLength; i++) {
+        calculatedChecksum ^= payload[i];
+    }
+
+    if (receivedChecksum != calculatedChecksum) {
+        sendError("Checksum Mismatch");
+        return;
+    }
+
+    if (Serial.read() != END_BYTE) {
+        sendError("Invalid End Byte");
+        return;
+    }
+
+    // Process the message based on type
+    switch (messageType) {
+        case PING:
+            sendResponse("Pong");
+            break;
+        case COMMAND:
+            handleCommand(payload, payloadLength);
+            break;
+        case DATA:
+            handleData(payload, payloadLength);
+            break;
+        default:
+            sendError("Unknown Message Type");
+    }
+}
+
+void handleCommand(const uint8_t* payload, uint8_t length) {
+    if (length == 1) {
+        switch (payload[0]) {
+            case 0x01:
+                // Zephyr detected
+                cat_detected = true;
+                sendResponse("Zephyr Detected");
+                break;
+            case 0x02:
+                // Flea detected
+                cat_detected = false;
+                sendResponse("Flea Detected");
+                break;
+            default:
+                sendError("Unknown Command");
+        }
+    } else {
+        sendError("Invalid Command Length");
+    }
+}
+
+void handleData(const uint8_t* payload, uint8_t length) {
+    // Example: Print the received data
+    Serial.print("Received Data: ");
+    for (uint8_t i = 0; i < length; i++) {
+        Serial.print(payload[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+}
+
+void sendResponse(const char* response) {
+    sendMessage(RESPONSE, (uint8_t*)response, strlen(response));
+}
+
+void sendError(const char* error) {
+    sendMessage(ERROR, (uint8_t*)error, strlen(error));
+}
+
+void sendMessage(uint8_t messageType, uint8_t* payload, uint8_t length) {
+    uint8_t checksum = messageType ^ length;
+    for (uint8_t i = 0; i < length; i++) {
+        checksum ^= payload[i];
+    }
+
+    Serial.write(START_BYTE);
+    Serial.write(messageType);
+    Serial.write(length);
+    Serial.write(payload, length);
+    Serial.write(checksum);
+    Serial.write(END_BYTE);
 }
