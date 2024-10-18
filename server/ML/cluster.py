@@ -1,33 +1,67 @@
-import numpy as np
+import torch
+import torch.nn as nn
 from sklearn.cluster import KMeans
-import joblib
+import cv2
+import numpy as np
+import os
+from torchvision import transforms
+from construct_model import CNNAutoencoder
+from ir_simulator import MLX90640Simulator
 
-# Assuming feature vectors are already extracted by your autoencoder
-# Replace this with actual feature extraction code that pulls from your autoencoder
-# Example feature vectors from the center of the autoencoder
-# Replace with the actual autoencoder feature vector data
-def get_feature_vectors():
-    # Dummy data for placeholder, replace this with your real feature vectors
-    return np.random.rand(1000, 128)  # 1000 samples, 128-dimensional feature vectors
+n_clusters = 3
+def kmeans_clustering(features, n_clusters):
+    # Perform KMeans clustering
+    kmeans = KMeans(n_clusters=n_clusters)
+    kmeans.fit(features)
+    return kmeans
 
-# Number of clusters: 3 (My cat, Roommate's cat, No cat)
-num_clusters = 3
+def extract_features(encoder, images):
+    # Prepare the images
+    images = torch.tensor(images, dtype=torch.float32).unsqueeze(1)
 
-# Fetch the feature vectors (from the autoencoder)
-features = get_feature_vectors()
+    # Get the features
+    with torch.no_grad():
+        features = encoder(images).squeeze().cpu().numpy()
 
-# Initialize KMeans with the desired number of clusters
-kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    # Reshape for kmeans
+    features = features.reshape(features.shape[0], -1)
 
-# Fit the KMeans algorithm to the feature data
-kmeans.fit(features)
+    return features
 
-# Export the trained KMeans model for later use
-joblib.dump(kmeans, 'kmeans_model.pkl')
+import numpy as np
 
-# Example: Predict clusters for new data (use actual feature vectors here)
-new_features = get_feature_vectors()  # Replace with actual new data
-predictions = kmeans.predict(new_features)
+def save_numpy_to_binary(arr, filename="centroids.bin"):
+    if not isinstance(arr, np.ndarray):
+        raise ValueError("Input must be a NumPy array")
+    
+    # Save array as a binary file
+    arr.astype(np.float32).tofile(filename)
 
-# Display results (cluster assignments for the new data)
-print(predictions)
+def main():
+    # Load the dataset
+    simulator = MLX90640Simulator()
+    images = simulator.generate_batch(1024)
+
+    # Load the model
+    model = CNNAutoencoder("model_yamls/default.yaml")
+
+    # Load weights
+    model.load_weights("trained_weights.pth")
+
+    # Load the encoder
+    encoder = model.encoder
+
+    # Extract features from the dataset
+    features = extract_features(encoder, images)
+
+    # Cluster using KMeans
+    kmeans = kmeans_clustering(features, n_clusters)
+
+    # Get the cluster centroids
+    centroids = kmeans.cluster_centers_
+
+    # Save the centroids to a binary file
+    save_numpy_to_binary(centroids)
+
+if __name__ == "__main__":
+    main()
