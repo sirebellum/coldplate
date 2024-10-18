@@ -1,8 +1,8 @@
 import numpy as np
 
 # Parameters
-COSINE_TABLE_SIZE = 256
-COSINE_MAX = 65535
+COSINE_TABLE_SIZE = 16
+COSINE_MAX = 255
 
 # Generate cosine wave values (scaled to uint16 range)
 cosine_wave = np.uint16((np.cos(2 * np.pi * np.arange(COSINE_TABLE_SIZE) / COSINE_TABLE_SIZE) + 1) * (COSINE_MAX / 2))

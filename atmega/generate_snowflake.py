@@ -26,26 +26,33 @@ def image_to_boolean_array(image_path, output_shape=(128, 64), threshold=128, ou
         formatted_array.append(''.join(byte))
 
     # Print formatted array for ATmega328p code
-    print("const bool image_array[SPLASH_HEIGHT][SPLASH_WIDTH] PROGMEM = {{".format(output_shape[1], output_shape[0]))
-    for line in formatted_array:
-        print("    {" + ", ".join(line) + "},")
-    print("};")
-
-    # # Convert boolean array to list of indices of True values
-    # indices = []
-    # for i, row in enumerate(boolean_array):
-    #     for j, pixel in enumerate(row):
-    #         if pixel:
-    #             indices.append((i, j))
-
-    # # Print the indices as a formatted array for use in ATmega328p code, multiple indices per line
-    # print("const uint8_t image_indices[{}][2] PROGMEM = {{".format(len(indices)))
-    # for i in range(0, len(indices), 8):
-    #     print("    {" + "}, {".join([f"{y}, {x}" for x, y in indices[i:i+8]]) + "},")
+    # print("const bool image_array[SPLASH_HEIGHT][SPLASH_WIDTH] PROGMEM = {{".format(output_shape[1], output_shape[0]))
+    # for line in formatted_array:
+    #     print("    {" + ", ".join(line) + "},")
     # print("};")
+
+    # Bit pack the array into uint16_t values, assume width is a multiple of 16
+    packed_array = []
+    for row in boolean_array:
+        packed_row = []
+        for i in range(0, len(row), 16):
+            packed_byte = 0
+            for j in range(16):
+                packed_byte |= row[i + j] << (15 - j)
+            packed_row.append(packed_byte)
+        packed_array.append(packed_row)
+
+    # Print packed array for ATmega328p code as hex
+    print("const uint16_t image_array[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {{".format(output_shape[1], output_shape[0]))
+    for line in packed_array:
+        print("    {" + ", ".join("0x{:04X}".format(byte) for byte in line) + "},")
+    print("};")
 
     return boolean_array
 
 if __name__ == "__main__":
     # Example usage:
     image_to_boolean_array("food.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    image_to_boolean_array("caution.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    image_to_boolean_array("snowflake.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    image_to_boolean_array("ultrasonic.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
