@@ -261,3 +261,42 @@ String detect_cats(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y],
 
     return cat_detected;
 }
+
+// Function to send MLX90640 data array
+bool uploadThermalData(float data[MLX90640_RESOLUTION_Y*MLX90640_RESOLUTION_X], const char* serverUrl) {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi not connected");
+        return false;
+    }
+
+    WiFiClient client;
+    HTTPClient http;
+    http.begin(client, serverUrl); // Specify the URL
+
+    // Prepare the data to send
+    uint8_t byteData[MLX90640_RESOLUTION_Y * MLX90640_RESOLUTION_X * sizeof(float)];
+    memcpy(byteData, data, sizeof(byteData));  // Copy float array as bytes
+
+    // Convert to Base64 if your server requires it
+    // String encodedData = base64::encode(byteData, sizeof(byteData));
+    
+    // Set headers
+    http.addHeader("Content-Type", "application/octet-stream");
+
+    // Send POST request with raw byte data
+    int httpResponseCode = http.POST(byteData, sizeof(byteData));
+
+    // Check response
+    if (httpResponseCode > 0) {
+        String response = http.getString();
+        Serial.println(httpResponseCode); // Print response code
+        Serial.println(response);         // Print response
+    } else {
+        Serial.print("Error on sending POST: ");
+        Serial.println(httpResponseCode);
+        return false;
+    }
+
+    http.end(); // Close connection
+    return true;
+}

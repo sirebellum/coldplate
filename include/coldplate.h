@@ -6,6 +6,8 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_SHT31.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 
 #define TEMP_MIN 200         // 2.00°C -> multiply by 100 to scale
 #define TEMP_MAX 700         // 7.00°C -> multiply by 100
@@ -76,5 +78,6 @@ void ultrasonic_stop();
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 display);
 void update_background(uint8_t *frame, uint8_t *background, uint8_t *persistence);
 String detect_cats(uint8_t frame[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const int32_t weights_input[NN_INPUT_SIZE*NN_HIDDEN_SIZE], const int32_t weights_hidden[NN_HIDDEN_SIZE*NN_OUTPUT_SIZE]);
+bool uploadThermalData(float data[MLX90640_RESOLUTION_Y*MLX90640_RESOLUTION_X], const char *url);
 
 #endif

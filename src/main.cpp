@@ -218,6 +218,11 @@ Adafruit_SHT31 sht31; // Hot side sensor (I2C)
 // Create objects for the IR sensor
 Adafruit_MLX90640 mlx;
 
+// Network stuff
+const char* ssid = "Dummy Wifi";
+const char* password = "passw0rd227";
+const char* serverUrl = "http://192.168.69.9:5000/ir_data";
+
 // Ultrasonic time tracking
 unsigned long ultrasonic_start_time = 0;
 unsigned long ultrasonic_end_time = 0;
@@ -229,11 +234,13 @@ bool cat_detected = false;
 uint8_t mlx_buffer[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
 
 void setup() {
+    system_update_cpu_freq(160);
+
     Serial.begin(9600);
     Serial.setTimeout(200);
 
     Wire.begin();
-    Wire.setClock(100000);
+    Wire.setClock(400000);
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
 
@@ -248,10 +255,17 @@ void setup() {
 
     bme.begin(0x76);
     sht31.begin(0x44);
+    mlx.begin();
 
     pwm_init();
 
     ultrasonic_start_time = millis();
+
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        display_splash_screen("Connecting to WiFi...", caution_splashscreen, display);
+    }
 }
 
 void loop(void) {
