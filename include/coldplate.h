@@ -60,9 +60,10 @@
 #define IR_MAX_TEMP 39  // 39.00°C
 #define IR_MIN_TEMP 20  // 20.00°C
 
-// KMeans clustering stuff
-#define KMEANS_NUM_CENTEROIDS 4
-#define KMEANS_DIMENSIONALITY MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y
+// NN stuff
+#define NN_INPUT_SIZE 768
+#define NN_OUTPUT_SIZE 5
+#define NN_HIDDEN_SIZE 128
 
 // Function prototypes
 void pwm_init();
@@ -74,6 +75,6 @@ void ultrasonic_start();
 void ultrasonic_stop();
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 display);
 void update_background(uint8_t *frame, uint8_t *background, uint8_t *persistence);
-String detect_cats(uint8_t frame[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const uint32_t centroids[KMEANS_NUM_CENTEROIDS][KMEANS_DIMENSIONALITY]);
+String detect_cats(uint8_t frame[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const int32_t weights_input[NN_INPUT_SIZE*NN_HIDDEN_SIZE], const int32_t weights_hidden[NN_HIDDEN_SIZE*NN_OUTPUT_SIZE]);
 
 #endif

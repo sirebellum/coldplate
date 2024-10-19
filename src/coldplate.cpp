@@ -159,47 +159,101 @@ uint8_t adjust_fan_speed(int32_t hot_temp) {
     return pwm_value;
 }
 
-// Function to classify a data point to the nearest centroid
-uint8_t classify_point(uint8_t data_point[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const uint32_t centroids[KMEANS_NUM_CENTEROIDS][KMEANS_DIMENSIONALITY]) {
-    uint32_t min_distance = UINT32_MAX;
-    uint8_t closest_centroid = 0;
+// Activation function (e.g., ReLU)
+static int32_t relu(int32_t x) {
+    return x > 0 ? x : 0;
+}
 
-    // Iterate over each centroid
-    for (uint8_t i = 0; i < KMEANS_NUM_CENTEROIDS; ++i) {
-        uint32_t distance = 0;
+// Function to compute dot product between inputs and weights
+static int32_t dot_product(const uint8_t* input, const int32_t* weights, uint16_t length) {
+    int32_t sum = 0;
+    for (uint16_t i = 0; i < length; i++) {
+        sum += input[i] * weights[i];
+    }
+    return sum;
+}
 
-        // Compute the Manhattan distance
-        for (uint16_t j = 0; j < KMEANS_NUM_CENTEROIDS; ++j) {
-            distance += (data_point[j] > centroids[i][j])
-                            ? (data_point[j] - centroids[i][j])
-                            : (centroids[i][j] - data_point[j]);
+void maxpool2x2(uint8_t input[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y],
+                uint8_t output[MLX90640_RESOLUTION_X/2 * MLX90640_RESOLUTION_Y/2]) {
+    for (uint8_t y = 0; y < MLX90640_RESOLUTION_Y/2; y++) {
+        for (uint8_t x = 0; x < MLX90640_RESOLUTION_X/2; x++) {
+            uint8_t max_val = 0;
+            for (uint8_t j = 0; j < 2; j++) {
+                for (uint8_t i = 0; i < 2; i++) {
+                    uint8_t val = input[(y*2 + j) * MLX90640_RESOLUTION_X + x*2 + i];
+                    if (val > max_val) {
+                        max_val = val;
+                    }
+                }
+            }
+            output[y * MLX90640_RESOLUTION_X/2 + x] = max_val;
         }
+    }
+}
 
-        // Track the centroid with the smallest distance
-        if (distance < min_distance) {
-            min_distance = distance;
-            closest_centroid = i;
+// Function to compute the neural network inference
+uint8_t classify_point(uint8_t data_point[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y],
+                       const int32_t weights_input[NN_INPUT_SIZE * NN_HIDDEN_SIZE],
+                       const int32_t weights_hidden[NN_HIDDEN_SIZE * NN_OUTPUT_SIZE]) {
+    // Downsample the data point
+    uint8_t downsampled_data[MLX90640_RESOLUTION_X/2 * MLX90640_RESOLUTION_Y/2] = {0};
+    maxpool2x2(data_point, downsampled_data);
+    
+    // Allocate hidden layer
+    int32_t hidden_layer[NN_HIDDEN_SIZE] = {0};
+
+    // Forward pass for the hidden layer
+    for (uint16_t i = 0; i < NN_HIDDEN_SIZE; i++) {
+        int32_t weights[NN_INPUT_SIZE] = {0};
+        for (uint16_t j = 0; j < NN_INPUT_SIZE; j++) {
+            weights[j] = pgm_read_dword(&weights_input[i * NN_INPUT_SIZE + j]);
+        }
+        hidden_layer[i] = dot_product(downsampled_data, weights, NN_INPUT_SIZE);
+        hidden_layer[i] = relu(hidden_layer[i]);
+    }
+
+    // Allocate output layer
+    int32_t output_layer[NN_OUTPUT_SIZE] = {0};
+
+    // Forward pass for the output layer
+    for (uint16_t i = 0; i < NN_OUTPUT_SIZE; i++) {
+        int32_t weights[NN_HIDDEN_SIZE] = {0};
+        for (uint16_t j = 0; j < NN_HIDDEN_SIZE; j++) {
+            weights[j] = pgm_read_dword(&weights_hidden[i * NN_HIDDEN_SIZE + j]);
+        }
+        output_layer[i] = dot_product((uint8_t*)hidden_layer, weights, NN_HIDDEN_SIZE);
+    }
+
+    // Find the class with the highest score
+    uint8_t predicted_class = 0;
+    int32_t max_score = output_layer[0];
+    for (uint8_t i = 1; i < NN_OUTPUT_SIZE; i++) {
+        if (output_layer[i] > max_score) {
+            max_score = output_layer[i];
+            predicted_class = i;
         }
     }
 
-    return closest_centroid;
+    return predicted_class;
 }
 
-String detect_cats(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const uint32_t centroids[KMEANS_NUM_CENTEROIDS][KMEANS_DIMENSIONALITY]) {
-    // Use KMeans clustering to detect cats
+String detect_cats(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y],
+                   const int32_t weights_input[NN_INPUT_SIZE*NN_HIDDEN_SIZE],
+                   const int32_t weights_hidden[NN_HIDDEN_SIZE*NN_OUTPUT_SIZE]) {
+    // Use NN to detect cats
     String cat_detected;
 
     // Classify the data point
-    uint8_t centroid = classify_point(data, centroids);
+    uint8_t data_class = classify_point(data, weights_input, weights_hidden);
 
-    // Check if the data point is close to a centroid
-    if (centroid == 0) { // No cats detected
+    // Check the class
+    if (data_class == 0) { // No cats detected
         cat_detected = "None";
-    } else if (centroid == 1) { // Zephyr detected
+    } else if (data_class == 1) { // Zephyr detected
         cat_detected = "Zephyr";
-    } else if (centroid == 2) { // Flea detected
+    } else if (data_class == 2) { // Flea detected
         cat_detected = "Flea";
-    } else if (centroid == 3) { // Both cats detected
+    } else if (data_class == 3) { // Both cats detected
         cat_detected = "Both";
     } else { // Unknown cat detected
         cat_detected = "Unknown";
