@@ -3,7 +3,7 @@ import random
 from multiprocessing import Pool, cpu_count
 
 class MLX90640Simulator:
-    def __init__(self, rows=24, cols=32, temp_range=(15, 30)):
+    def __init__(self, rows=24, cols=32, temp_range=(20, 39)):
         self.rows = rows
         self.cols = cols
         self.temp_min, self.temp_max = temp_range
@@ -11,7 +11,7 @@ class MLX90640Simulator:
     def generate_heatmap(self):
         heatmap = np.random.uniform(self.temp_min, self.temp_min + 3, (self.rows, self.cols))
         if random.random() < 0.05:
-            return heatmap, -1
+            return heatmap, 4
 
         num_cats = random.choice([0, 1, 2])
         cat_type = [self._add_cat_signature(heatmap) for _ in range(num_cats)]

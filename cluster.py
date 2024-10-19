@@ -1,13 +1,13 @@
-from sklearn.cluster import KMeans
-from sklearn.metrics import mutual_info_score
-import numpy as np
 from ir_simulator import MLX90640Simulator
-from scipy.special import comb
+import numpy as np
+from sklearn.cluster import KMeans
+from metrics import adjusted_rand_index, normalized_mutual_info, fowlkes_mallows_index
 
 n_clusters = 5
+
 def calculate_max_scaling_factor_unsigned(centroids):
-    # Since centroids are between 0 and 1, the max_value is <= 1
-    max_value = 1.0
+    # Find the maximum value in the centroids
+    max_value = np.max(centroids)
     
     # Start with a high scaling factor and adjust down if necessary
     scaling_factor = 1
@@ -27,57 +27,6 @@ def calculate_max_scaling_factor_unsigned(centroids):
     effective_precision = 1 / scaling_factor
     
     return scaling_factor, effective_precision
-
-def adjusted_rand_index(true_labels, pred_labels):
-    n = len(true_labels)
-    contingency_matrix = {}
-    
-    # Create contingency table
-    for true, pred in zip(true_labels, pred_labels):
-        if (true, pred) in contingency_matrix:
-            contingency_matrix[(true, pred)] += 1
-        else:
-            contingency_matrix[(true, pred)] = 1
-
-    sum_comb_c = sum(comb(n_ij, 2) for n_ij in contingency_matrix.values())
-    sum_comb_true = sum(comb(sum(true_labels == k), 2) for k in set(true_labels))
-    sum_comb_pred = sum(comb(sum(pred_labels == k), 2) for k in set(pred_labels))
-    
-    index = sum_comb_c
-    expected_index = (sum_comb_true * sum_comb_pred) / comb(n, 2)
-    max_index = 0.5 * (sum_comb_true + sum_comb_pred)
-    
-    if max_index == expected_index:
-        return 1.0
-    
-    return (index - expected_index) / (max_index - expected_index)
-
-def normalized_mutual_info(true_labels, pred_labels):
-    mutual_info = mutual_info_score(true_labels, pred_labels)
-    h_true = -np.sum(np.bincount(true_labels) / len(true_labels) * np.log(np.bincount(true_labels) / len(true_labels)))
-    h_pred = -np.sum(np.bincount(pred_labels) / len(pred_labels) * np.log(np.bincount(pred_labels) / len(pred_labels)))
-    
-    return 2 * mutual_info / (h_true + h_pred)
-
-def fowlkes_mallows_index(true_labels, pred_labels):
-    # Create a confusion matrix for pairs
-    tp_fp = sum(comb(sum(pred_labels == k), 2) for k in set(pred_labels))
-    tp_fn = sum(comb(sum(true_labels == k), 2) for k in set(true_labels))
-    
-    # True positive pairs
-    tp = 0
-    n = len(true_labels)
-    for i in range(n):
-        for j in range(i + 1, n):
-            if true_labels[i] == true_labels[j] and pred_labels[i] == pred_labels[j]:
-                tp += 1
-                
-    # Precision and Recall calculations
-    precision = tp / tp_fp if tp_fp != 0 else 0
-    recall = tp / tp_fn if tp_fn != 0 else 0
-    
-    # FMI is the geometric mean of precision and recall
-    return np.sqrt(precision * recall)
 
 def main():
     # Load the dataset
