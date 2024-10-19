@@ -1,9 +1,6 @@
 #ifndef COLDPLATE_H
 #define COLDPLATE_H
 
-#include <avr/io.h>
-#include <avr/pgmspace.h>
-#include <util/delay.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -21,19 +18,19 @@
 #define CAT_PAD_TEMP_MIN 2900  // 29.00°C
 #define CAT_PAD_TEMP_MAX 3900  // 39.00°C
 
-// PWM output pins
-#define PWM_FAN_PIN DDD6 // (pin 6)
-#define PWM_PUMP_PIN DDD5 // (pin 5)
-#define PWM_ULTRASONIC_PIN DDB1 // (pin 9)
+// Define PWM output pins using GPIO numbers instead of DDR and port registers
+#define PWM_FAN_PIN 12 // GPIO12 (D6)
+#define PWM_PUMP_PIN 14 // GPIO14 (D5)
+#define PWM_ULTRASONIC_PIN 13 // GPIO13 (D7)
 
-// GPIO output pins
-#define TEG_PIN 10 // (pin 10)
-#define TEG_AUX_PIN 8 // (pin 8)
+// Define GPIO output pins
+#define TEG_PIN 10 // GPIO10 (SD3)
+#define TEG_AUX_PIN 15 // GPIO15 (D8)
 
 // Ultrasonic generator config
 #define ULTRASONIC_FREQ 40000 // 40 kHz
-#define ULTRASONIC_DURATION (1000 * 60 * 5) // 5 minutes
-#define ULTRASONIC_INTERVAL (1000 * 60 * 60 * 2) // 2 hours
+#define ULTRASONIC_DURATION (1000UL * 60UL * 5UL) // 5 minutes
+#define ULTRASONIC_INTERVAL (1000UL * 60UL * 60UL * 2UL) // 2 hours
 
 // Adjusted Voltage Divider Constants
 // Use scaled integer math for voltage calculations
@@ -54,16 +51,29 @@
 #define SPLASH_HEIGHT 48
 #define SPLASH_WIDTH 48
 
+// IR sensor stuff
+#define MLX90640_RESOLUTION_Y 24
+#define MLX90640_RESOLUTION_X 32
+#define MLX90640_DOWMSAMPLE 4
+#define MLX90640_I2C_ADDR 0x33
+#define MLX90640_REFRESH_RATE 3  // 3 Hz
+#define IR_MAX_TEMP 39  // 39.00°C
+#define IR_MIN_TEMP 20  // 20.00°C
+
+// KMeans clustering stuff
+#define KMEANS_NUM_CENTEROIDS 4
+#define KMEANS_DIMENSIONALITY MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y
+
 // Function prototypes
 void pwm_init();
-void adc_init();
-uint16_t adc_read(uint8_t channel);
-bool adjust_teg_power(int32_t current_temp, bool cat_detected);
+bool adjust_teg_power(int32_t current_temp);
 uint8_t adjust_pump_speed(int32_t temp_diff);
 uint8_t adjust_fan_speed(int32_t hot_temp);
-void check_ultrasonic_cleaning(bool cat_detected, unsigned long ultrasonic_start_time, unsigned long ultrasonic_end_time);
+void check_ultrasonic_cleaning(String cat_detected, unsigned long ultrasonic_start_time, unsigned long ultrasonic_end_time);
 void ultrasonic_start();
 void ultrasonic_stop();
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 display);
+void update_background(uint8_t *frame, uint8_t *background, uint8_t *persistence);
+String detect_cats(uint8_t frame[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], const uint32_t centroids[KMEANS_NUM_CENTEROIDS][KMEANS_DIMENSIONALITY]);
 
 #endif
