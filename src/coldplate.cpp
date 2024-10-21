@@ -1,45 +1,45 @@
 #include "coldplate.h"
 
 // Function to time the ultrasonic cleaning process
-void check_ultrasonic_cleaning(String cat_detected, unsigned long ultrasonic_start_time, unsigned long ultrasonic_end_time) {
+void check_ultrasonic_cleaning(bool cat_detected, unsigned long *ultrasonic_start_time, unsigned long *ultrasonic_end_time) {
     // Get time since last ultrasonic cleaning
     unsigned long current_time = millis();
-    unsigned long time_since_stop = current_time - ultrasonic_end_time;
-    unsigned long time_since_start = current_time - ultrasonic_start_time;
+    unsigned long time_since_stop = current_time - *ultrasonic_end_time;
+    unsigned long time_since_start = current_time - *ultrasonic_start_time;
+
+    DEBUG_PRINT("Current time: "); DEBUG_PRINTLN(current_time);
+    DEBUG_PRINT("Time since last stop: "); DEBUG_PRINTLN(time_since_stop);
+    DEBUG_PRINT("Time since last start: "); DEBUG_PRINTLN(time_since_start);
 
     // Stop if Zephyr is detected. Screw Flea
-    if (cat_detected == "Zephyr") {
+    if (cat_detected) {
         ultrasonic_stop();
-        ultrasonic_end_time = current_time;
-    } else if (cat_detected == "Flea") {
-        ultrasonic_start();
-        ultrasonic_start_time = current_time;
-    } else if (cat_detected == "Both") {
-        ultrasonic_stop();
-        ultrasonic_end_time = current_time;
-    } else {
-        // Do nothing
+        *ultrasonic_end_time = current_time;
+        DEBUG_PRINTLN("Cat detected, stopping ultrasonic cleaning.");
     }
 
     // Check if ultrasonic cleaning is needed
     if (time_since_stop >= ULTRASONIC_INTERVAL) {
         ultrasonic_start();
-        ultrasonic_start_time = current_time;
+        *ultrasonic_start_time = current_time;
+        DEBUG_PRINTLN("Ultrasonic cleaning started.");
     } else if (time_since_start >= ULTRASONIC_DURATION) {
         ultrasonic_stop();
-        ultrasonic_end_time = current_time;
+        *ultrasonic_end_time = current_time;
+        DEBUG_PRINTLN("Ultrasonic cleaning stopped after duration.");
     }
 }
 
 // Function to draw a detailed splash screen image in center of the blue section (below 16 pixels)
-void drawSplashScreen(const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 display) {
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
+void drawSplashScreen(const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 *display) {
+    display->setTextColor(SSD1306_WHITE);
+    display->setTextSize(1);
     
     // Calculate Offsets
     int xOffset = (SCREEN_WIDTH - SPLASH_WIDTH) / 2;
     int yOffset = YELLOW_HEIGHT + (BLUE_HEIGHT - SPLASH_HEIGHT) / 2;
 
+    DEBUG_PRINTLN("Drawing splash screen...");
     // Draw the splash screen
     for (int y = 0; y < SPLASH_HEIGHT; y++) {
         for (int x_sub = 0; x_sub < SPLASH_WIDTH/16; x_sub++) {
@@ -48,31 +48,35 @@ void drawSplashScreen(const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16
                 // Get pixels from left to right
                 int pixel = (bits >> (16 - x)) & 0x01;
                 if (pixel) {
-                    display.drawPixel(x + xOffset + x_sub*16, y + yOffset, SSD1306_WHITE);
+                    display->drawPixel(x + xOffset + x_sub*16, y + yOffset, SSD1306_WHITE);
                 }
             }
         }
     }
+    DEBUG_PRINTLN("Splash screen drawn.");
 }
 
 // Function to draw banner in the yellow section (top 16 pixels)
-void drawBanner(String message, Adafruit_SSD1306 display) {
-    display.setTextColor(SSD1306_BLACK);
+void drawBanner(String message, Adafruit_SSD1306 *display) {
+    display->setTextColor(SSD1306_BLACK);
     // Fill the banner with white
-    display.fillRect(0, 0, SCREEN_WIDTH, YELLOW_HEIGHT, SSD1306_WHITE);
+    display->fillRect(0, 0, SCREEN_WIDTH, YELLOW_HEIGHT, SSD1306_WHITE);
 
+    DEBUG_PRINT("Drawing banner: "); DEBUG_PRINTLN(message);
     // Draw the banner text
-    display.setTextSize(1);
-    display.setCursor(SCREEN_WIDTH / 2 - message.length() * 3, 2);
-    display.print(message);
+    display->setTextSize(1);
+    display->setCursor(SCREEN_WIDTH / 2 - message.length() * 3, 2);
+    display->print(message);
 }
 
 // Main function to draw splash screen
-void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 display) {
-    display.clearDisplay();
+void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 *display) {
+    DEBUG_PRINTLN("Displaying splash screen...");
+    display->clearDisplay();
     drawBanner(message, display);
     drawSplashScreen(splashscreen, display);
-    display.display();
+    display->display();
+    DEBUG_PRINTLN("Splash screen display complete.");
 }
 
 // Function to initialize PWM pins for the fan, pump, ultrasonic transducer, and TEG module
@@ -80,223 +84,183 @@ void pwm_init() {
     // Set up PWM on ESP8266 pins using analogWrite, which uses software PWM with a default frequency of ~1kHz
     pinMode(PWM_FAN_PIN, OUTPUT);
     pinMode(PWM_PUMP_PIN, OUTPUT);
+
+    DEBUG_PRINTLN("Initializing PWM pins...");
+    // Set initial PWM duty cycles
+    analogWrite(PWM_FAN_PIN, 255);  // Duty cycle for FAN
+    analogWrite(PWM_PUMP_PIN, 255); // Duty cycle for PUMP
+
+    analogWriteFreq(PWM_FREQ); // Set PWM frequency
+    DEBUG_PRINTLN("PWM initialization complete.");
+}
+
+void ultrasonic_init() {
     pinMode(PWM_ULTRASONIC_PIN, OUTPUT);
-    pinMode(TEG_PIN, OUTPUT);
-    pinMode(TEG_AUX_PIN, OUTPUT);
-
-    // Set initial PWM duty cycles to 0 (off initially)
-    analogWrite(PWM_FAN_PIN, 0);  // Duty cycle for FAN
-    analogWrite(PWM_PUMP_PIN, 0); // Duty cycle for PUMP
-    analogWrite(PWM_ULTRASONIC_PIN, 0); // Duty cycle for ULTRASONIC
-
-    // Change PWM frequency if needed (default is ~1kHz). ESP8266 supports changing the frequency:
-    analogWriteFreq(ULTRASONIC_FREQ); // Set PWM frequency to 40kHz for all pins
 }
 
 void ultrasonic_stop() {
-    // Set pwm to 0
-    analogWrite(PWM_ULTRASONIC_PIN, 0);
+    digitalWrite(PWM_ULTRASONIC_PIN, LOW);
 }
 
 void ultrasonic_start() {
-    // Set pwm to 50%
-    analogWrite(PWM_ULTRASONIC_PIN, 128);
+    digitalWrite(PWM_ULTRASONIC_PIN, HIGH);
 }
 
-bool adjust_teg_power(int32_t cold_temp) {
-    // Turn TEG on and off based on the cold side temperature
-    if (cold_temp < TEMP_MIN) {
-        digitalWrite(TEG_PIN, LOW); // Turn off the TEG
+// Turn the power on or off of the teg module cooling the plate
+bool adjust_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff) {
+    DEBUG_PRINT("Adjusting TEG power. Hot temp: "); DEBUG_PRINT(hot_temp);
+    DEBUG_PRINT(" Cold temp: "); DEBUG_PRINT(cold_temp);
+    DEBUG_PRINT(" Temp diff: "); DEBUG_PRINTLN(temp_diff);
+
+    if (cold_temp > TEMP_MAX) {
+        digitalWrite(TEG_PIN, HIGH);
+        DEBUG_PRINTLN("TEG power ON.");
         return true;
+    } else if (cold_temp < TEMP_MIN) {
+        digitalWrite(TEG_PIN, LOW);
+        DEBUG_PRINTLN("TEG power OFF.");
+        return false;
     } else {
-        digitalWrite(TEG_PIN, HIGH); // Turn on the TEG
+        DEBUG_PRINTLN("TEG power unchanged.");
         return false;
     }
 }
 
-bool adjust_aux_teg_power(int32_t cat_temp) {
-    // Turn TEG on and off based on the cat pad temperature
-    if (cat_temp > CAT_PAD_TEMP_MAX) {
-        digitalWrite(TEG_AUX_PIN, LOW); // Turn off the TEG
-        return true;
-    } else {
-        digitalWrite(TEG_AUX_PIN, HIGH); // Turn on the TEG
+// Turn the power on or off of the auxiliary teg module cooling something else
+bool adjust_aux_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff) {
+    DEBUG_PRINT("Adjusting auxiliary TEG power. Hot temp: "); DEBUG_PRINT(hot_temp);
+    DEBUG_PRINT(" Cold temp: "); DEBUG_PRINT(cold_temp);
+    DEBUG_PRINT(" Temp diff: "); DEBUG_PRINTLN(temp_diff);
+
+    // Prioritize main teg over aux teg
+    if (hot_temp > CAT_PAD_TEMP_MAX) {
+        digitalWrite(TEG_AUX_PIN, LOW);
+        DEBUG_PRINTLN("Auxiliary TEG power OFF.");
         return false;
-    }
-}
-
-uint8_t adjust_pump_speed(int32_t temp_diff) {
-    uint8_t pwm_value = 0;
-
-    // Adjust pump speed based on TEMP_THRESHOLD
-    if (temp_diff < TEMP_THRESHOLD) {
-        pwm_value = 0; // If the temperature difference is too low, turn off the pump
-    } else if (temp_diff > TEMP_THRESHOLD + 10) {
-        pwm_value = 255; // If the temperature difference is too high, set pump to full speed
     } else {
-        // Adjust pump speed based on the temperature difference
-        pwm_value = (uint8_t)((temp_diff - TEMP_THRESHOLD) / 10.0 * 255);
+        digitalWrite(TEG_AUX_PIN, HIGH);
+        DEBUG_PRINTLN("Auxiliary TEG power ON.");
+        return true;
     }
-
-    analogWrite(PWM_FAN_PIN, pwm_value); // Set PWM value for the pump (Pin 5)
-    return pwm_value;
 }
 
+// Adjust speed of the fan
 uint8_t adjust_fan_speed(int32_t hot_temp) {
-    uint8_t pwm_value = 0;
+    DEBUG_PRINT("Adjusting fan speed. Hot temp: "); DEBUG_PRINT(hot_temp);
 
-    // Adjust fan speed based on hot side temperature
-    if (hot_temp < CAT_PAD_TEMP_MIN) {
-        pwm_value = 0; // If the hot side temperature is too low, turn off the fan
-    } else if (hot_temp > CAT_PAD_TEMP_MAX) {
-        pwm_value = 255; // If the hot side temperature is too high, set fan to full speed
+    uint8_t fan_speed = 0;
+    // Set fan speed based on CAT_PAD temps
+    if (hot_temp > CAT_PAD_TEMP_MAX) {
+        fan_speed = 255;
+    } else if (hot_temp < CAT_PAD_TEMP_MIN) {
+        fan_speed = 0;
     } else {
-        // Adjust fan speed based on the hot side temperature
-        pwm_value = (uint8_t)((hot_temp - CAT_PAD_TEMP_MIN) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN) * 255);
+        int32_t scaled_speed = ((hot_temp - CAT_PAD_TEMP_MIN) * 255) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN);
+        fan_speed = (uint8_t)(scaled_speed > 255 ? 255 : scaled_speed);
     }
 
-    analogWrite(PWM_PUMP_PIN, pwm_value); // Set PWM value for the fan (Pin 6)
-    return pwm_value;
+    analogWrite(PWM_FAN_PIN, fan_speed);
+    DEBUG_PRINT("Fan speed set to: "); DEBUG_PRINTLN(fan_speed);
+    return fan_speed;
 }
 
-// Activation function (e.g., ReLU)
-static int32_t relu(int32_t x) {
-    return x > 0 ? x : 0;
-}
+// Adjust speed of the pump
+uint8_t adjust_pump_speed(int32_t temp_diff) {
+    DEBUG_PRINT("Adjusting pump speed. Temp diff: "); DEBUG_PRINT(temp_diff);
 
-// Function to compute dot product between inputs and weights
-static int32_t dot_product(const uint8_t* input, const int32_t* weights, uint16_t length) {
-    int32_t sum = 0;
-    for (uint16_t i = 0; i < length; i++) {
-        sum += input[i] * weights[i];
+    uint8_t pump_speed = 0;
+    // Set pump to maintain a maximum and minimum temperature difference
+    if (temp_diff > TEMP_DIFF_MAX) {
+        pump_speed = 255;
+    } else if (temp_diff < TEMP_DIFF_MIN) {
+        pump_speed = 0;
+    } else {
+        int32_t scaled_speed = ((temp_diff - TEMP_DIFF_MIN) * 255) / (TEMP_DIFF_MAX - TEMP_DIFF_MIN);
+        pump_speed = (uint8_t)(scaled_speed > 255 ? 255 : scaled_speed);
     }
-    return sum;
+
+    analogWrite(PWM_PUMP_PIN, pump_speed);
+    DEBUG_PRINT("Pump speed set to: "); DEBUG_PRINTLN(pump_speed);
+    return pump_speed;
 }
 
-void maxpool2x2(uint8_t input[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y],
-                uint8_t output[MLX90640_RESOLUTION_X/2 * MLX90640_RESOLUTION_Y/2]) {
-    for (uint8_t y = 0; y < MLX90640_RESOLUTION_Y/2; y++) {
-        for (uint8_t x = 0; x < MLX90640_RESOLUTION_X/2; x++) {
-            uint8_t max_val = 0;
-            for (uint8_t j = 0; j < 2; j++) {
-                for (uint8_t i = 0; i < 2; i++) {
-                    uint8_t val = input[(y*2 + j) * MLX90640_RESOLUTION_X + x*2 + i];
-                    if (val > max_val) {
-                        max_val = val;
-                    }
-                }
+// Calculate max of an array
+int32_t calculate_max_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]) {
+    int32_t max_temp = 0;
+    DEBUG_PRINTLN("Calculating max temperature...");
+    for (uint16_t i = 0; i < MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y; i++) {
+        if (data[i] > max_temp) {
+            max_temp = data[i];
+        }
+        // DEBUG_PRINT("Data["); DEBUG_PRINT(i); DEBUG_PRINT("]: "); DEBUG_PRINT(data[i]);
+        // DEBUG_PRINT(", Current max: "); DEBUG_PRINTLN(max_temp);
+    }
+    DEBUG_PRINT("Max temperature: "); DEBUG_PRINTLN(max_temp);
+    return max_temp;
+}
+
+// Calculate min of an array
+int32_t calculate_min_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]) {
+    int32_t min_temp = 1000;
+    DEBUG_PRINTLN("Calculating min temperature...");
+    for (uint16_t i = 0; i < MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y; i++) {
+        if (data[i] < min_temp) {
+            min_temp = data[i];
+        }
+        // DEBUG_PRINT("Data["); DEBUG_PRINT(i); DEBUG_PRINT("]: "); DEBUG_PRINT(data[i]);
+        // DEBUG_PRINT(", Current min: "); DEBUG_PRINTLN(min_temp);
+    }
+    DEBUG_PRINT("Min temperature: "); DEBUG_PRINTLN(min_temp);
+    return min_temp;
+}
+
+uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY]) {
+    uint8_t closest_centroid = 0;
+    uint64_t min_distance = UINT64_MAX;
+
+    // Precompute a multiplier to avoid floating-point arithmetic
+    uint32_t scale_multiplier = KMEANS_SCALE_FACTOR / KMEANS_SCALE_FACTOR;
+
+    DEBUG_PRINTLN("Starting k-means clustering...");
+
+    // Loop through each centroid
+    for (uint8_t i = 0; i < KMEANS_CENTROIDS; i++) {
+        uint64_t distance = 0;
+
+        // DEBUG_PRINT("Centroid "); DEBUG_PRINT(i); DEBUG_PRINTLN(":");
+
+        // Calculate Euclidean distance squared (to avoid the cost of sqrt)
+        for (uint16_t j = 0; j < KMEANS_DIMENSIONALITY; j++) {
+            // Scale the input data to match the scaled centroids using the multiplier
+            uint32_t scaled_data = (uint32_t)data[j] * scale_multiplier;
+            // Pull from PROGMEM
+            uint32_t centroid = pgm_read_dword(&centroids[i][j]);
+            // Handle underflow
+            uint32_t diff;
+            if (scaled_data > centroid) {
+                diff = scaled_data - centroid;
+            } else {
+                diff = centroid - scaled_data;
             }
-            output[y * MLX90640_RESOLUTION_X/2 + x] = max_val;
+            distance += (uint64_t)(diff * diff);
+
+            // DEBUG_PRINT("  Dimension "); DEBUG_PRINT(j); DEBUG_PRINT(": data="); DEBUG_PRINT(data[j]);
+            // DEBUG_PRINT(", scaled_data="); DEBUG_PRINT(scaled_data);
+            // DEBUG_PRINT(", centroid="); DEBUG_PRINT(centroids[i][j]);
+            // DEBUG_PRINT(", diff="); DEBUG_PRINT(diff);
+            // DEBUG_PRINT(", distance="); DEBUG_PRINTLN(distance);
         }
-    }
-}
 
-// Function to compute the neural network inference
-uint8_t classify_point(uint8_t data_point[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y],
-                       const int32_t weights_input[NN_INPUT_SIZE * NN_HIDDEN_SIZE],
-                       const int32_t weights_hidden[NN_HIDDEN_SIZE * NN_OUTPUT_SIZE]) {
-    // Downsample the data point
-    uint8_t downsampled_data[MLX90640_RESOLUTION_X/2 * MLX90640_RESOLUTION_Y/2] = {0};
-    maxpool2x2(data_point, downsampled_data);
-    
-    // Allocate hidden layer
-    int32_t hidden_layer[NN_HIDDEN_SIZE] = {0};
-
-    // Forward pass for the hidden layer
-    for (uint16_t i = 0; i < NN_HIDDEN_SIZE; i++) {
-        int32_t weights[NN_INPUT_SIZE] = {0};
-        for (uint16_t j = 0; j < NN_INPUT_SIZE; j++) {
-            weights[j] = pgm_read_dword(&weights_input[i * NN_INPUT_SIZE + j]);
+        // Track the centroid with the minimum distance
+        if (distance < min_distance) {
+            min_distance = distance;
+            closest_centroid = i;
         }
-        hidden_layer[i] = dot_product(downsampled_data, weights, NN_INPUT_SIZE);
-        hidden_layer[i] = relu(hidden_layer[i]);
+
+        DEBUG_PRINT("Distance to centroid "); DEBUG_PRINT(i); DEBUG_PRINT(": "); DEBUG_PRINTLN(distance);
     }
 
-    // Allocate output layer
-    int32_t output_layer[NN_OUTPUT_SIZE] = {0};
+    DEBUG_PRINT("Closest centroid: "); DEBUG_PRINTLN(closest_centroid);
 
-    // Forward pass for the output layer
-    for (uint16_t i = 0; i < NN_OUTPUT_SIZE; i++) {
-        int32_t weights[NN_HIDDEN_SIZE] = {0};
-        for (uint16_t j = 0; j < NN_HIDDEN_SIZE; j++) {
-            weights[j] = pgm_read_dword(&weights_hidden[i * NN_HIDDEN_SIZE + j]);
-        }
-        output_layer[i] = dot_product((uint8_t*)hidden_layer, weights, NN_HIDDEN_SIZE);
-    }
-
-    // Find the class with the highest score
-    uint8_t predicted_class = 0;
-    int32_t max_score = output_layer[0];
-    for (uint8_t i = 1; i < NN_OUTPUT_SIZE; i++) {
-        if (output_layer[i] > max_score) {
-            max_score = output_layer[i];
-            predicted_class = i;
-        }
-    }
-
-    return predicted_class;
-}
-
-String detect_cats(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y],
-                   const int32_t weights_input[NN_INPUT_SIZE*NN_HIDDEN_SIZE],
-                   const int32_t weights_hidden[NN_HIDDEN_SIZE*NN_OUTPUT_SIZE]) {
-    // Use NN to detect cats
-    String cat_detected;
-
-    // Classify the data point
-    uint8_t data_class = classify_point(data, weights_input, weights_hidden);
-
-    // Check the class
-    if (data_class == 0) { // No cats detected
-        cat_detected = "None";
-    } else if (data_class == 1) { // Zephyr detected
-        cat_detected = "Zephyr";
-    } else if (data_class == 2) { // Flea detected
-        cat_detected = "Flea";
-    } else if (data_class == 3) { // Both cats detected
-        cat_detected = "Both";
-    } else { // Unknown cat detected
-        cat_detected = "Unknown";
-    }
-
-    return cat_detected;
-}
-
-// Function to send MLX90640 data array
-bool uploadThermalData(float data[MLX90640_RESOLUTION_Y*MLX90640_RESOLUTION_X], const char* serverUrl) {
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi not connected");
-        return false;
-    }
-
-    WiFiClient client;
-    HTTPClient http;
-    http.begin(client, serverUrl); // Specify the URL
-
-    // Prepare the data to send
-    uint8_t byteData[MLX90640_RESOLUTION_Y * MLX90640_RESOLUTION_X * sizeof(float)];
-    memcpy(byteData, data, sizeof(byteData));  // Copy float array as bytes
-
-    // Convert to Base64 if your server requires it
-    // String encodedData = base64::encode(byteData, sizeof(byteData));
-    
-    // Set headers
-    http.addHeader("Content-Type", "application/octet-stream");
-
-    // Send POST request with raw byte data
-    int httpResponseCode = http.POST(byteData, sizeof(byteData));
-
-    // Check response
-    if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println(httpResponseCode); // Print response code
-        Serial.println(response);         // Print response
-    } else {
-        Serial.print("Error on sending POST: ");
-        Serial.println(httpResponseCode);
-        return false;
-    }
-
-    http.end(); // Close connection
-    return true;
+    return closest_centroid;
 }
