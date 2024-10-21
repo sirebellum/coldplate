@@ -57,7 +57,6 @@
 #define MLX90640_I2C_ADDR 0x33
 #define IR_MAX_TEMP 39  // 39.00°C
 #define IR_MIN_TEMP 20  // 20.00°C
-#define IR_BUFFER_LEN 32
 
 // KMeans stuff
 #define KMEANS_CENTROIDS 3

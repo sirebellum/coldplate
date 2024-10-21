@@ -610,7 +610,7 @@ void loop(void) {
     String message = "Hot: " + String(hot_temp) + " Cold: " + String(cold_temp);
     if (cat_detected) {
         display_splash_screen(message, cat_splashscreen, &display);
-    } else if (analogRead(PWM_ULTRASONIC_PIN) > 0) {
+    } else if (digitalRead(PWM_ULTRASONIC_PIN) > 0) {
         display_splash_screen(message, ultrasonic_splashscreen, &display);
     } else {
         display_splash_screen(message, snowflake_splashscreen, &display);
