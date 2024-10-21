@@ -3,11 +3,12 @@ import numpy as np
 from sklearn.cluster import KMeans
 from metrics import adjusted_rand_index, normalized_mutual_info, fowlkes_mallows_index
 
-n_clusters = 5
+n_clusters = 3
 
 def calculate_max_scaling_factor_unsigned(centroids):
     # Find the maximum value in the centroids
     max_value = np.max(centroids)
+    print("Max value:", max_value)
     
     # Start with a high scaling factor and adjust down if necessary
     scaling_factor = 1
@@ -32,7 +33,7 @@ def main():
     # Load the dataset
     simulator = MLX90640Simulator()
     images_labeled, labels = simulator.generate_batch(1024)
-    images, _ = simulator.generate_batch(1024 * 1024)
+    images, _ = simulator.generate_batch(10240)
 
     # Flatten the images
     images = images.reshape(images.shape[0], -1)
@@ -65,7 +66,8 @@ def main():
 
     # Print the rounded centroids[n_clusters][768] as a c++ array in hex
     # Print n_clusters items per line
-    print("const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY] = {")
+    print("#define KMEANS_SCALE_FACTOR", scaling_factor)
+    print("const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY] PROGMEM = {")
     for i in range(n_clusters):
         print("{", end="")
         for j in range(768):

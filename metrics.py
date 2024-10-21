@@ -1,6 +1,7 @@
 from sklearn.metrics import normalized_mutual_info_score
 from scipy.special import comb
 from collections import Counter
+import numpy as np
 
 def calculate_max_scaling_factor_unsigned(centroids):
     # Since centroids are between 0 and 1, the max_value is <= 1

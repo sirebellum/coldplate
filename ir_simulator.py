@@ -11,21 +11,45 @@ class MLX90640Simulator:
     def generate_heatmap(self):
         heatmap = np.random.uniform(self.temp_min, self.temp_min + 3, (self.rows, self.cols))
         if random.random() < 0.05:
-            return heatmap, 4
+            return heatmap, 0
+
+        # Randomly add shapes
+        num_shapes = random.choice([0, 1, 2])
+        for _ in range(num_shapes):
+            shape_type = random.choice(["line", "square"])
+            if shape_type == "line":
+                self._add_line_signature(heatmap)
+            else:
+                self._add_square_signature(heatmap)
 
         num_cats = random.choice([0, 1, 2])
         cat_type = [self._add_cat_signature(heatmap) for _ in range(num_cats)]
-        
-        if len(cat_type) == 0:
-            label = 0
-        elif len(cat_type) == 1:
-            label = 1 if cat_type[0] == "small" else 2
-        elif len(cat_type) == 2:
-            label = 3
-        else:
-            raise ValueError("Invalid number of cats")
 
-        return heatmap, label
+        return heatmap, num_cats
+
+    def _add_line_signature(self, heatmap):
+        start_x = random.randint(0, self.cols - 6)
+        start_y = random.randint(0, self.rows - 6)
+        direction = random.choice([(0, 1), (1, 0), (1, 1), (1, -1)])
+        length = random.randint(3, 5)
+        intensity_range = (27, 30)
+
+        for i in range(length):
+            x = start_x + direction[0] * i
+            y = start_y + direction[1] * i
+            if 0 <= x < self.cols and 0 <= y < self.rows:
+                self._add_hotspot(heatmap, x, y, 1, intensity_range)
+
+    def _add_square_signature(self, heatmap):
+        start_x = random.randint(0, self.cols - 6)
+        start_y = random.randint(0, self.rows - 6)
+        width = random.randint(3, 5)
+        height = random.randint(3, 5)
+        intensity_range = (27, 30)
+
+        for i in range(height):
+            for j in range(width):
+                self._add_hotspot(heatmap, start_x + j, start_y + i, 1, intensity_range)
 
     def _add_cat_signature(self, heatmap):
         cat_type = random.choice(["small", "large"])
