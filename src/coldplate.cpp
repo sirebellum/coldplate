@@ -84,11 +84,13 @@ void pwm_init() {
     // Set up PWM on ESP8266 pins using analogWrite, which uses software PWM with a default frequency of ~1kHz
     pinMode(PWM_FAN_PIN, OUTPUT);
     pinMode(PWM_PUMP_PIN, OUTPUT);
+    pinMode(PWM_PLATE_PIN, OUTPUT);
 
     DEBUG_PRINTLN("Initializing PWM pins...");
     // Set initial PWM duty cycles
     analogWrite(PWM_FAN_PIN, 255);  // Duty cycle for FAN
     analogWrite(PWM_PUMP_PIN, 255); // Duty cycle for PUMP
+    analogWrite(PWM_PLATE_PIN, 128); // Duty cycle for capacitive plate
 
     analogWriteFreq(PWM_FREQ); // Set PWM frequency
     DEBUG_PRINTLN("PWM initialization complete.");
@@ -96,6 +98,32 @@ void pwm_init() {
 
 void ultrasonic_init() {
     pinMode(PWM_ULTRASONIC_PIN, OUTPUT);
+}
+
+void adc_init() {
+    pinMode(ADC_PIN, INPUT);
+}
+
+bool detect_food(int *adc_samples) {
+    // Collect ADC samples at desired rate
+    for (int i = 0; i < ADC_SAMPLES; i++) {
+        adc_samples[i] = analogRead(ADC_PIN);
+    }
+
+    // See if we're at 1V or less
+    int sum = 0;
+    for (int i = 0; i < ADC_SAMPLES; i++) {
+        sum += adc_samples[i];
+    }
+    int avg = sum / ADC_SAMPLES;
+    DEBUG_PRINT("Average ADC value: "); DEBUG_PRINTLN(avg);
+
+    // If the average is below the threshold, we have food
+    if (avg < ADC_THRESHOLD) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 void ultrasonic_stop() {
@@ -107,30 +135,45 @@ void ultrasonic_start() {
 }
 
 // Turn the power on or off of the teg module cooling the plate
-bool adjust_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff) {
+bool adjust_teg_power(int32_t hot_temp, int32_t cold_temp, bool food_detected) {
     DEBUG_PRINT("Adjusting TEG power. Hot temp: "); DEBUG_PRINT(hot_temp);
     DEBUG_PRINT(" Cold temp: "); DEBUG_PRINT(cold_temp);
-    DEBUG_PRINT(" Temp diff: "); DEBUG_PRINTLN(temp_diff);
 
-    if (cold_temp > TEMP_MAX) {
+    // Idle between max and idle if no food is detected
+    if (!food_detected) {
+        if (cold_temp < TEMP_MAX) {
+            digitalWrite(TEG_PIN, LOW);
+            DEBUG_PRINTLN("TEG power OFF.");
+            return false;
+        } else if (cold_temp > TEMP_IDLE) {
+            digitalWrite(TEG_PIN, HIGH);
+            DEBUG_PRINTLN("TEG power ON.");
+            return true;
+        } else {
+            DEBUG_PRINTLN("TEG power unchanged.");
+            return digitalRead(TEG_PIN);
+        }
+    }
+
+    // Turn on TEG if cold side is too hot
+    if (cold_temp > TEMP_MIN) {
         digitalWrite(TEG_PIN, HIGH);
         DEBUG_PRINTLN("TEG power ON.");
         return true;
-    } else if (cold_temp < TEMP_MIN) {
+    } else if (cold_temp > TEMP_MAX) {
         digitalWrite(TEG_PIN, LOW);
         DEBUG_PRINTLN("TEG power OFF.");
         return false;
     } else {
         DEBUG_PRINTLN("TEG power unchanged.");
-        return false;
+        return digitalRead(TEG_PIN);
     }
 }
 
 // Turn the power on or off of the auxiliary teg module cooling something else
-bool adjust_aux_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff) {
+bool adjust_aux_teg_power(int32_t hot_temp, int32_t cold_temp) {
     DEBUG_PRINT("Adjusting auxiliary TEG power. Hot temp: "); DEBUG_PRINT(hot_temp);
     DEBUG_PRINT(" Cold temp: "); DEBUG_PRINT(cold_temp);
-    DEBUG_PRINT(" Temp diff: "); DEBUG_PRINTLN(temp_diff);
 
     // Prioritize main teg over aux teg
     if (hot_temp > CAT_PAD_TEMP_MAX) {

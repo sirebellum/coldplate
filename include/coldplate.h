@@ -25,6 +25,8 @@
 #define PWM_FAN_PIN 0
 #define PWM_PUMP_PIN 2
 #define PWM_ULTRASONIC_PIN 4
+#define PWM_PLATE_PIN 15
+#define PWM_FREQ 1000
 
 // Define GPIO output pins
 #define TEG_PIN 13
@@ -34,7 +36,10 @@
 #define SDA_PIN 14
 #define SCL_PIN 5
 
-#define PWM_FREQ 1000
+// ADC for capacitance sensing
+#define ADC_PIN A0
+#define ADC_SAMPLES 100
+#define ADC_THRESHOLD 300
 
 // Ultrasonic generator config
 #define ULTRASONIC_FREQ 40000
@@ -63,7 +68,7 @@
 #define KMEANS_DIMENSIONALITY 768
 #define KMEANS_SCALE_FACTOR 10000000000
 
-#define DEBUG 0 // Set to 0 to disable Serial prints
+#define DEBUG 1 // Set to 0 to disable Serial prints
 
 #if DEBUG
   #define DEBUG_PRINT(x) Serial.print(x)
@@ -75,18 +80,20 @@
 
 // Function prototypes
 void pwm_init();
-bool adjust_aux_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff);
-bool adjust_teg_power(int32_t hot_temp, int32_t cold_temp, int32_t temp_diff);
+bool adjust_aux_teg_power(int32_t hot_temp, int32_t cold_temp);
+bool adjust_teg_power(int32_t hot_temp, int32_t cold_temp, bool food_detected);
 uint8_t adjust_pump_speed(int32_t temp_diff);
 uint8_t adjust_fan_speed(int32_t hot_temp);
 void check_ultrasonic_cleaning(bool cat_detected, unsigned long *ultrasonic_start_time, unsigned long *ultrasonic_end_time);
 void ultrasonic_start();
 void ultrasonic_stop();
 void ultrasonic_init();
+void adc_init();
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 *display);
 int32_t calculate_max_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]);
 int32_t calculate_min_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]);
 uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY]);
 bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y*MLX90640_RESOLUTION_X]);
+bool detect_food(int *adc_samples);
 
 #endif

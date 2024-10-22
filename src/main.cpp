@@ -1,6 +1,7 @@
 #include "coldplate.h"
 #include <base64.hpp>
 
+
 // Splash screens
 const uint16_t cat_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
     {0x0000, 0x0000, 0x0000},
@@ -508,6 +509,9 @@ bool mlx_detected = false;
 // Create objects for the sht35 sensor
 Adafruit_SHT31 sht35 = Adafruit_SHT31();
 
+// Create objects for ADC sensing the capacitance of the plate
+int adc_values[ADC_SAMPLES];
+
 // Network stuff
 const char* ssid = "Mordor";
 const char* password = "0ned0esn0tsimplyl0gint0m0rd0r";
@@ -541,6 +545,7 @@ void setup() {
 
     pwm_init();
     ultrasonic_init();
+    adc_init();
 
     pinMode(TEG_PIN, OUTPUT);
     pinMode(TEG_AUX_PIN, OUTPUT);
@@ -592,9 +597,12 @@ void loop(void) {
         uploadThermalData(ir_data);
     }
 
+    // Detect food
+    bool food_detected = detect_food(adc_values);
+
     // Adjust TEG power, pump speed, and fan speed based on temperature readings
-    adjust_teg_power(hot_temp, cold_temp, temp_diff);
-    adjust_aux_teg_power(hot_temp, cold_temp, temp_diff);
+    adjust_teg_power(hot_temp, cold_temp, food_detected);
+    adjust_aux_teg_power(hot_temp, cold_temp);
     adjust_pump_speed(temp_diff);
     adjust_fan_speed(hot_temp);
 
@@ -606,8 +614,12 @@ void loop(void) {
         cat_detected = false;
     }
 
-    // Update the display
-    String message = "Hot: " + String(hot_temp) + " Cold: " + String(cold_temp);
+    // Update the display (1 decimal point)
+    char hot_temp_str[6];
+    char cold_temp_str[6];
+    dtostrf(hot_temp / 100.0, 4, 1, hot_temp_str);
+    dtostrf(cold_temp / 100.0, 4, 1, cold_temp_str);
+    String message = "Hot: " + String(hot_temp_str) + " Cold: " + String(cold_temp_str);
     if (cat_detected) {
         display_splash_screen(message, cat_splashscreen, &display);
     } else if (digitalRead(PWM_ULTRASONIC_PIN) > 0) {
