@@ -2,21 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>3D PCA Visualization</title>
+    <title>2D Cluster Visualization</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
     <style>
         #hover-image {
             position: absolute;
-            max-width: 400px;  /* Increased size of the image */
+            max-width: 400px;
             max-height: 400px;
             display: none;
             border: 1px solid #ccc;
-            pointer-events: none;  /* Allows mouse events to pass through the image */
-            z-index: 1000;  /* Ensures the image appears above other elements */
+            pointer-events: none;
+            z-index: 1000;
         }
         body {
             margin: 0;
-            overflow: hidden;  /* Prevents scrollbars when the image is near the edges */
+            overflow: hidden;
         }
     </style>
 </head>
@@ -24,37 +25,68 @@
     <div id="visualization" style="width: 100%; height: 100vh;"></div>
     <img id="hover-image" src="" alt="Hovered Image">
     <script>
-        const graphJSON = {{ graphJSON|tojson|safe }};
-        const plotData = JSON.parse(graphJSON);
-        Plotly.newPlot('visualization', plotData.data, plotData.layout).then(function() {
-            const visualizationDiv = document.getElementById('visualization');
-            const hoverImage = document.getElementById('hover-image');
-            let isHovering = false;
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+        let isHovering = false;
+        const hoverImage = document.getElementById('hover-image');
+        const visualizationDiv = document.getElementById('visualization');
+        
+        // Initialize Plotly with empty data
+        const initialData = [{
+            x: [],
+            y: [],
+            mode: 'markers',
+            marker: { size: 5, opacity: 0.8, color: [] },
+            customdata: []
+        }];
+        const layout = {
+            title: '2D Cluster Visualization of IR Images',
+            xaxis: { title: 'PC 1' },
+            yaxis: { title: 'PC 2' }
+        };
+        
+        Plotly.newPlot('visualization', initialData, layout);
 
-            visualizationDiv.on('plotly_hover', function(data){
-                const pointData = data.points[0];
-                const imageUrl = pointData.customdata;
-
-                if(imageUrl){
-                    hoverImage.src = imageUrl;
-                    hoverImage.style.display = 'block';
-                    isHovering = true;
-                }
-            });
-
-            visualizationDiv.on('plotly_unhover', function(data){
-                hoverImage.style.display = 'none';
-                isHovering = false;
-            });
-
-            visualizationDiv.addEventListener('mousemove', function(event){
-                if(isHovering){
-                    // Position the image next to the cursor with an offset
-                    hoverImage.style.left = (event.clientX + 15) + 'px';
-                    hoverImage.style.top = (event.clientY + 15) + 'px';
-                }
-            });
+        // Listen for graph updates
+        socket.on('update_graph', function(graphJSON) {
+            console.log("Received graph data:", graphJSON);
+            const plotData = JSON.parse(graphJSON);
+            Plotly.react('visualization', plotData.data, plotData.layout);
         });
+
+        // Hover handlers
+        visualizationDiv.on('plotly_hover', function(data){
+            const pointData = data.points[0];
+            const imageUrl = pointData.customdata;
+
+            if(imageUrl){
+                hoverImage.src = imageUrl;
+                hoverImage.style.display = 'block';
+                isHovering = true;
+            }
+        });
+
+        visualizationDiv.on('plotly_unhover', function(data){
+            hoverImage.style.display = 'none';
+            isHovering = false;
+        });
+
+        visualizationDiv.addEventListener('mousemove', function(event){
+            if(isHovering){
+                hoverImage.style.left = (event.clientX + 15) + 'px';
+                hoverImage.style.top = (event.clientY + 15) + 'px';
+            }
+        });
+
+        // Periodic call to /process endpoint
+        setInterval(() => {
+            fetch('/process')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Processed data:", data);
+                    // Optionally update the graph based on the response data
+                })
+                .catch(error => console.error('Error fetching /process:', error));
+        }, 6000);
     </script>
 </body>
 </html>
