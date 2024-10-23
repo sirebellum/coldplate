@@ -65,7 +65,7 @@ def save_processed_data(labels, tsne_data, image_records):
     # Save each sample to database
     for i, img in enumerate(image_records):
         processed_data = ProcessedData(image_id=img.id)
-        processed_data.cluster_ids = {cluster: int(labels[cluster][i]) if labels[cluster] is not None else None for cluster in NUM_CLUSTERS}
+        processed_data.cluster_ids = {str(key): int(labels[key][i]) for key in labels}
         processed_data.encoded_vector = tsne_data[i].tolist()
         session.add(processed_data)
     session.commit()
@@ -91,6 +91,7 @@ def main():
 
     vector_data = encode_images(image_data, encoder)
     kmeans = [load_kmeans(cluster) for cluster in NUM_CLUSTERS]
+    kmeans_deploy = torch.load("kmeans_deploy.pth")
 
     # Predict clusters
     labels = {}
@@ -99,6 +100,7 @@ def main():
             labels[NUM_CLUSTERS[i]] = kmeans_model.predict(vector_data)
         else:
             labels[NUM_CLUSTERS[i]] = None
+    labels["deploy"] = kmeans_deploy.predict(image_data)
     
     # Perform t-SNE
     tsne_data = perform_tsne(vector_data)

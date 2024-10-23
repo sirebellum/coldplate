@@ -115,14 +115,14 @@
             <option value="1">Class 1</option>
             <option value="2">Class 2</option>
             <option value="3">Class 3</option>
-            <option value="4">Class 4</option>
-            <option value="5">Class 5</option>
-            <option value="6">Class 6</option>
-            <option value="7">Class 7</option>
-            <option value="8">Class 8</option>
-            <option value="9">Class 9</option>
         </select>
         <button id="apply-class-button">Apply Class</button>
+        <button id="train-kmeans-button">Train KMeans</button>
+        <div id="db-info" style="position: absolute; top: 10px; right: 10px; padding: 10px; background-color: #fff; border: 1px solid #ccc; border-radius: 5px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+            <h4>Database Info</h4>
+            <p id="image-count">Images: 0</p>
+            <p id="processed-count">Processed: 0</p>
+        </div>        
     </div>
     <div id="visualization-container">
         <div id="visualization"></div>
@@ -191,17 +191,15 @@
 
         // Listen for status updates from the server
         socket.on('status_response', function (statusData) {
-            const { processing_running, training_running, graphing_running } = statusData;
+            const { processing_running, training_running, graphing_running, kmeans_training_running } = statusData;
 
             // Update the color of the status indicator based on the server status
-            // Solid blue: graphing running
-            // Solid red: training running
-            // Solid yellow: processing running
-            // Solid green: none running
             if (graphing_running) {
                 statusIndicator.style.backgroundColor = 'blue';
             } else if (training_running) {
                 statusIndicator.style.backgroundColor = 'red';
+            } else if (kmeans_training_running) {
+                statusIndicator.style.backgroundColor = 'purple';
             } else if (processing_running) {
                 statusIndicator.style.backgroundColor = 'yellow';
             } else {
@@ -297,24 +295,28 @@
             socket.emit('update_graph');
         });
 
+        // Add functionality for Train KMeans button
+        document.getElementById('train-kmeans-button').addEventListener('click', () => {
+            console.log("Train KMeans button clicked.");
+            socket.emit('train_kmeans');
+        });
+
         // Request status updates periodically
         setInterval(() => {
             socket.emit('status');
         }, 100);
 
         // Listen for database information updates from the server
-        socket.on('db_info_update', function (dbInfo) {
+        socket.on('db_info', function (dbInfo) {
             const { imageCount, processedCount } = dbInfo;
-
-            // Update the database information section
             document.getElementById('image-count').textContent = `Images: ${imageCount}`;
             document.getElementById('processed-count').textContent = `Processed: ${processedCount}`;
         });
 
         // Example: Request database info when the page loads or periodically
-        socket.emit('request_db_info');
+        socket.emit('get_db_info');
         setInterval(() => {
-            socket.emit('request_db_info');
+            socket.emit('get_db_info');
         }, 100);
 
     </script>

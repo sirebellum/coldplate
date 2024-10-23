@@ -58,6 +58,7 @@ process_lock = threading.Lock()
 processing_running = False
 training_running = False
 graphing_running = False
+kmeans_training_running = False
 
 # Routes
 
@@ -125,7 +126,6 @@ def upload_thermal_data():
 
         # Decode the base64 string
         data = base64.b64decode(data)
-        print(len(data))
 
         # Unpack the data
         unpacked_data = struct.unpack(f'{DATA_SIZE}f', data)
@@ -182,6 +182,19 @@ def run_processing():
             with process_lock:
                 processing_running = False
 
+def run_kmeans_training():
+    global kmeans_training_running
+    if kmeans_training_running:
+        print("KMeans training already running.")
+        return
+    with app.app_context():
+        try:
+            kmeans_training_running = True
+            subprocess.run(["python", "train_kmeans.py"])
+        finally:
+            with process_lock:
+                kmeans_training_running = False
+
 # Endpoint for Visualization
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
@@ -217,6 +230,8 @@ def get_graph_json(x, y, labels, image_urls):
         )
     )
     for cluster_id in cluster_ids:
+        if cluster_id != 'deploy':
+            continue
         scatter = go.Scatter(
             x=x, y=y,
             mode='markers',
@@ -283,13 +298,20 @@ def train_model():
     socketio.start_background_task(run_processing)
     socketio.start_background_task(emit_graph)
 
+# Handle Train KMeans Button Event
+@socketio.on('train_kmeans')
+def train_kmeans():
+    print("Train KMeans event received.")
+    socketio.start_background_task(run_kmeans_training)
+
 # Handle Status
 @socketio.on('status')
 def status():
     emit('status_response', {
         'processing_running': processing_running,
         'training_running': training_running,
-        'graphing_running': graphing_running
+        'graphing_running': graphing_running,
+        'kmeans_training_running': kmeans_training_running
     })
 
 @socketio.on('label_multiple_data')
@@ -326,16 +348,11 @@ def extract_image_id_from_url(image_url):
 # Event handler for requested db info
 @socketio.on('get_db_info')
 def get_db_info():
-    # Get the number of images in the database
-    num_images = db.session.query(func.count(ImageRecord.id)).scalar()
-
-    # Get the number of processed data entries
-    num_processed = db.session.query(func.count(ProcessedData.id)).scalar()
-
-    # Emit the response
-    emit('db_info_response', {
-        'num_images': num_images,
-        'num_processed': num_processed
+    num_images = ImageRecord.query.count()
+    num_processed = ProcessedData.query.count()
+    emit('db_info', {
+        'imageCount': num_images,
+        'processedCount': num_processed
     })
 
 if __name__ == '__main__':
