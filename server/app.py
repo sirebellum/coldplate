@@ -171,6 +171,9 @@ def run_processing():
     if processing_running:
         print("Processing already running.")
         return
+    while training_running:
+        print("Waiting for training to complete...")
+        time.sleep(5)
     with app.app_context():
         try:
             processing_running = True
@@ -205,10 +208,13 @@ def get_graph_json(x, y, labels, image_urls):
         title=f't-SNE Visualization',
         xaxis=dict(title='PC 1'),
         yaxis=dict(title='PC 2'),
-        # Set the background color to a dark gray
         paper_bgcolor='rgb(30, 30, 30)',
         plot_bgcolor='rgb(30, 30, 30)',   # Set the plot area background color to dark gray
-        font=dict(color='white')  # Set the font color to white for better contrast
+        font=dict(color='white'),  # Set the font color to white for better contrast
+        legend=dict(
+            font=dict(color='white'),
+            bgcolor='rgb(128, 128, 128)'
+        )
     )
     for cluster_id in cluster_ids:
         scatter = go.Scatter(
@@ -219,7 +225,8 @@ def get_graph_json(x, y, labels, image_urls):
                 size=5,
                 opacity=0.8
             ),
-            customdata=image_urls
+            customdata=image_urls,
+            name=f'KMeans {cluster_id}',
         )
         scatters.append(scatter)
     fig = go.Figure(data=scatters, layout=layout)
@@ -234,6 +241,9 @@ def emit_graph():
     if graphing_running:
         print("Graphing already running.")
         return
+    while processing_running:
+        print("Waiting for processing to complete...")
+        time.sleep(5)
     with app.app_context():
         graphing_running = True
         new_data = ProcessedData.query.all()
@@ -263,17 +273,24 @@ def update_graph():
 def process_images():
     print("Process images event received.")
     socketio.start_background_task(run_processing)
+    socketio.start_background_task(emit_graph)
 
 # Handle Train Button Event
 @socketio.on('train_model')
 def train_model():
     print("Train model event received.")
     socketio.start_background_task(run_training)
+    socketio.start_background_task(run_processing)
+    socketio.start_background_task(emit_graph)
 
 # Handle Status
 @socketio.on('status')
 def status():
-    emit('status_response', {'processing_running': processing_running, 'training_running': training_running})
+    emit('status_response', {
+        'processing_running': processing_running,
+        'training_running': training_running,
+        'graphing_running': graphing_running
+    })
 
 @socketio.on('label_multiple_data')
 def label_multiple_data(data):
@@ -288,15 +305,14 @@ def label_multiple_data(data):
 
         # Example logic to extract image ID and save to database
         image_id = extract_image_id_from_url(image_url)
-        existing_data = ProcessedData.query.filter_by(encoded_vector=[x, y], image_id=image_id).first()
-
-        if existing_data:
-            # Update existing data point
-            existing_data.cluster_id = class_label
-        else:
-            # Create new entry if not found
-            new_data = ProcessedData(encoded_vector=[x, y], cluster_id=class_label, image_id=image_id)
-            db.session.add(new_data)
+        if not image_id:
+            print(f"Image ID not found for {image_url}")
+            continue
+        
+        # Update the image class
+        image_record = ImageRecord.query.get(image_id)
+        image_record.img_class = class_label
+        db.session.add(image_record)
 
     db.session.commit()
     print(f"Applied class {class_label} to {len(selected_points)} points.")
@@ -307,6 +323,20 @@ def extract_image_id_from_url(image_url):
     image_record = ImageRecord.query.filter_by(file_path=file_name).first()
     return image_record.id if image_record else None
 
+# Event handler for requested db info
+@socketio.on('get_db_info')
+def get_db_info():
+    # Get the number of images in the database
+    num_images = db.session.query(func.count(ImageRecord.id)).scalar()
+
+    # Get the number of processed data entries
+    num_processed = db.session.query(func.count(ProcessedData.id)).scalar()
+
+    # Emit the response
+    emit('db_info_response', {
+        'num_images': num_images,
+        'num_processed': num_processed
+    })
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=6969)

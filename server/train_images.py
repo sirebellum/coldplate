@@ -7,7 +7,7 @@ from ML.construct_model import CNNAutoencoder
 
 IR_X = 32
 IR_Y = 24
-NUM_CLUSTERS = [4, 6, 8, 12]
+NUM_CLUSTERS = [4, 6, 8]
 
 session = Session()
 

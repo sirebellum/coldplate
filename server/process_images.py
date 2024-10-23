@@ -10,7 +10,7 @@ import os
 IR_X = 32
 IR_Y = 24
 TSNE_COMPONENTS = 2  # Number of components for t-SNE
-NUM_CLUSTERS = [4, 6, 8, 12]
+NUM_CLUSTERS = [4, 6, 8]
 
 session = Session()
 
@@ -58,6 +58,10 @@ def perform_tsne(vector_data):
 
 def save_processed_data(labels, tsne_data, image_records):
     print("Saving processed data...")
+
+    # Clear existing processed data
+    session.query(ProcessedData).delete()
+
     # Save each sample to database
     for i, img in enumerate(image_records):
         processed_data = ProcessedData(image_id=img.id)

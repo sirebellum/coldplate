@@ -107,9 +107,9 @@
 <body>
     <div id="controls">
         <div id="status-indicator" style="width: 10px; height: 10px; border-radius: 50%; background-color: gray; margin-right: 10px;"></div>
-        <button id="clear-button">Clear</button>
         <button id="train-button">Train</button>
         <button id="process-button">Process</button>
+        <button id="update-button">Update</button>
         <select id="class-selector">
             <option value="0">Class 0</option>
             <option value="1">Class 1</option>
@@ -191,15 +191,21 @@
 
         // Listen for status updates from the server
         socket.on('status_response', function (statusData) {
-            const { processing_running, training_running } = statusData;
+            const { processing_running, training_running, graphing_running } = statusData;
 
             // Update the color of the status indicator based on the server status
-            if (processing_running) {
-                statusIndicator.style.backgroundColor = 'orange'; // Processing is running
+            // Solid blue: graphing running
+            // Solid red: training running
+            // Solid yellow: processing running
+            // Solid green: none running
+            if (graphing_running) {
+                statusIndicator.style.backgroundColor = 'blue';
             } else if (training_running) {
-                statusIndicator.style.backgroundColor = 'blue'; // Training is running
+                statusIndicator.style.backgroundColor = 'red';
+            } else if (processing_running) {
+                statusIndicator.style.backgroundColor = 'yellow';
             } else {
-                statusIndicator.style.backgroundColor = 'green'; // Idle/ready
+                statusIndicator.style.backgroundColor = 'green';
             }
         });
 
@@ -273,12 +279,6 @@
             selectedImagesContainer.innerHTML = '';
         });
 
-        // Add functionality for Clear button
-        document.getElementById('clear-button').addEventListener('click', () => {
-            console.log("Clear button clicked.");
-            socket.emit('clear_graph');
-        });
-
         // Add functionality for Train button
         document.getElementById('train-button').addEventListener('click', () => {
             console.log("Train button clicked.");
@@ -291,15 +291,32 @@
             socket.emit('process_images');
         });
 
-        // Periodically update the graph
-        setInterval(() => {
+        // Add functionality for Update button
+        document.getElementById('update-button').addEventListener('click', () => {
+            console.log("Update button clicked.");
             socket.emit('update_graph');
-        }, 1000);
+        });
 
         // Request status updates periodically
         setInterval(() => {
             socket.emit('status');
-        }, 1000);
+        }, 100);
+
+        // Listen for database information updates from the server
+        socket.on('db_info_update', function (dbInfo) {
+            const { imageCount, processedCount } = dbInfo;
+
+            // Update the database information section
+            document.getElementById('image-count').textContent = `Images: ${imageCount}`;
+            document.getElementById('processed-count').textContent = `Processed: ${processedCount}`;
+        });
+
+        // Example: Request database info when the page loads or periodically
+        socket.emit('request_db_info');
+        setInterval(() => {
+            socket.emit('request_db_info');
+        }, 100);
+
     </script>
 </body>
 </html>
