@@ -23,8 +23,7 @@ class ProcessedData(Base):
     __tablename__ = 'processed_data'
     id = Column(Integer, primary_key=True)
     image_id = Column(Integer, ForeignKey('image_record.id'), nullable=False)
-    cluster_id = Column(Integer)
-    centroid = Column(JSON)  # Optional: store centroid coordinates
+    cluster_ids = Column(JSON)  # For storing KMeans cluster results
     encoded_vector = Column(JSON)  # For storing CNN autoencoder results
 
 # Create a sessionmaker

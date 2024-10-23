@@ -7,7 +7,7 @@ from ML.construct_model import CNNAutoencoder
 
 IR_X = 32
 IR_Y = 24
-NUM_CLUSTERS = 4  # Number of clusters for KMeans
+NUM_CLUSTERS = [4, 6, 8, 12]
 
 session = Session()
 
@@ -82,10 +82,13 @@ def main():
     vector_data = encode_images(image_data, encoder)
 
     # Train KMeans
-    kmeans = train_kmeans(vector_data)
+    kmeans = []
+    for num_clusters in NUM_CLUSTERS:
+        kmeans.append(train_kmeans(vector_data, num_clusters))
 
     # Save the models
-    torch.save(kmeans, "kmeans_model.pth")
+    for i, num_clusters in enumerate(NUM_CLUSTERS):
+        torch.save(kmeans[i], f"kmeans_{num_clusters}.pth")
     torch.save(encoder.state_dict(), "encoder_weights.pth")
 
     print("Training complete.")

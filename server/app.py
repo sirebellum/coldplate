@@ -46,8 +46,7 @@ class ImageRecord(db.Model):
 class ProcessedData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     image_id = db.Column(db.Integer, db.ForeignKey('image_record.id'), nullable=False)
-    cluster_id = db.Column(db.Integer)
-    centroid = db.Column(db.JSON)
+    cluster_ids = db.Column(db.JSON)
     encoded_vector = db.Column(db.JSON)
 
 # Ensure tables are created within the application context
@@ -58,6 +57,7 @@ with app.app_context():
 process_lock = threading.Lock()
 processing_running = False
 training_running = False
+graphing_running = False
 
 # Routes
 
@@ -166,7 +166,6 @@ def run_training():
             with process_lock:
                 training_running = False
 
-
 def run_processing():
     global processing_running
     if processing_running:
@@ -190,59 +189,73 @@ def get_visualization():
 colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan', 'magenta', 'lime', 'teal', 'lavender', 'brown', 'beige', 'maroon', 'mint', 'olive', 'apricot', 'navy', 'grey', 'white', 'black']
 colors_map = {i: color for i, color in enumerate(colors)}
 def get_graph_json(x, y, labels, image_urls):
-    labels_color = [colors_map.get(label, 'black') for label in labels]
+    
+    # Get the cluster ids
+    cluster_ids = labels[0].keys()
 
-    scatter = go.Scatter(
-        x=x, y=y,
-        mode='markers',
-        marker=dict(
-            color=labels_color,
-            size=5,
-            opacity=0.8
-        ),
-        customdata=image_urls
-    )
+    # Seperate out the labels for each cluster
+    labels_color = {}
+    for cluster_id in cluster_ids:
+        labels_num = [labels[i][cluster_id] for i in range(len(labels))]
+        labels_color[cluster_id] = [colors_map[label] for label in labels_num]
+
+    # Create the scatter plots
+    scatters = []
     layout = go.Layout(
-        title='2D Cluster Visualization of IR Images',
+        title=f't-SNE Visualization',
         xaxis=dict(title='PC 1'),
-        yaxis=dict(title='PC 2')
+        yaxis=dict(title='PC 2'),
+        # Set the background color to a dark gray
+        paper_bgcolor='rgb(30, 30, 30)',
+        plot_bgcolor='rgb(30, 30, 30)',   # Set the plot area background color to dark gray
+        font=dict(color='white')  # Set the font color to white for better contrast
     )
-    fig = go.Figure(data=[scatter], layout=layout)
+    for cluster_id in cluster_ids:
+        scatter = go.Scatter(
+            x=x, y=y,
+            mode='markers',
+            marker=dict(
+                color=labels_color[cluster_id],
+                size=5,
+                opacity=0.8
+            ),
+            customdata=image_urls
+        )
+        scatters.append(scatter)
+    fig = go.Figure(data=scatters, layout=layout)
     graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
+
     return graphJSON
 
 # socketio function to run in the background looping through the data
 # to emit graph points to the client
 def emit_graph():
+    global graphing_running
+    if graphing_running:
+        print("Graphing already running.")
+        return
     with app.app_context():
+        graphing_running = True
         new_data = ProcessedData.query.all()
+        if len(new_data) == 0:
+            print("No data to graph.")
+            graphing_running = False
+            return
+        new_data = new_data[:10000]
         x = [data.encoded_vector[0] for data in new_data]
         y = [data.encoded_vector[1] for data in new_data]
-        labels = [data.cluster_id for data in new_data]
+        labels = [data.cluster_ids for data in new_data]
         image_ids = [data.image_id for data in new_data]
         image_records = ImageRecord.query.filter(ImageRecord.id.in_(image_ids)).all()
         image_urls = [f"/images/{image.file_path.split('/')[-1]}" for image in image_records]
         graphJSON = get_graph_json(x, y, labels, image_urls)
+        graphing_running = False
+        print("Graphing complete.")
         socketio.emit('update_graph', graphJSON)
-        time.sleep(1)
-
-# Handle Clear Button Event
-@socketio.on('clear_graph')
-def clear_graph():
-    print("Clear graph event received.")
-    # Emit an empty graph or reload data
-    initialData = []
-    layout = {
-        'title': '2D Cluster Visualization of IR Images',
-        'xaxis': {'title': 'PC 1'},
-        'yaxis': {'title': 'PC 2'}
-    }
-    socketio.emit('update_graph', json.dumps({'data': initialData, 'layout': layout}))
 
 # Handle Update Graph
 @socketio.on('update_graph')
 def update_graph():
-    print("Update graph event received.")
     socketio.start_background_task(emit_graph)
 
 # Handle Process Button Event
@@ -260,7 +273,6 @@ def train_model():
 # Handle Status
 @socketio.on('status')
 def status():
-    print("Status event received.")
     emit('status_response', {'processing_running': processing_running, 'training_running': training_running})
 
 @socketio.on('label_multiple_data')
