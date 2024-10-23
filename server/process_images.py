@@ -16,8 +16,7 @@ session = Session()
 def load_images(num_images=None):
     images = session.query(ImageRecord).all()
     if num_images is not None:
-        image_ids = np.random.choice(len(images), num_images, replace=False)
-        images = [images[i] for i in image_ids]
+        images = images[:num_images]
     image_data = []
     image_records = []
     for img in images:
@@ -69,7 +68,7 @@ def save_processed_data(labels, tsne_data, image_records):
     session.commit()
 
 def main():
-    image_data, image_records = load_images(10000)
+    image_data, image_records = load_images(100000)
     if len(image_data) == 0:
         print("No images to process.")
         return
