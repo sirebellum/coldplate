@@ -1,0 +1,136 @@
+model:
+  name: "cnn_autoencoder_v2"
+  input_shape: [1, 24, 32]
+  
+  encoder:
+    layers:
+      - type: "Conv2D"
+        name: "conv1"
+        filters: 64
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+        input_shape: [1, 24, 32]  # Only needed for the first layer
+
+      - type: "BatchNormalization"
+        name: "batch_norm1"
+
+      - type: "MaxPooling2D"
+        name: "pool1"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Conv2D"
+        name: "conv2"
+        filters: 128
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "BatchNormalization"
+        name: "batch_norm2"
+
+      - type: "MaxPooling2D"
+        name: "pool2"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Conv2D"
+        name: "conv3"
+        filters: 256
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "BatchNormalization"
+        name: "batch_norm3"
+
+      - type: "MaxPooling2D"
+        name: "pool3"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Flatten"
+        name: "flatten"
+
+      - type: "Dense"
+        name: "dense_latent"
+        units: 3072
+        units_out: 3072
+        activation: "relu"
+
+      - type: "KMeans"
+        name: "kmeans"
+        num_clusters: 16
+        num_features: 3072
+
+  decoder:
+    layers:
+      - type: "Dense"
+        name: "dense_reshape"
+        units: 16
+        units_out: 768
+        activation: "relu"
+
+      - type: "Reshape"
+        name: "reshape"
+        target_shape: [64, 3, 4]
+
+      - type: "UpSampling2D"
+        name: "upsample1"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "deconv1"
+        filters: 128
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "BatchNormalization"
+        name: "batch_norm4"
+
+      - type: "UpSampling2D"
+        name: "upsample2"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "deconv2"
+        filters: 64
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "BatchNormalization"
+        name: "batch_norm5"
+
+      - type: "UpSampling2D"
+        name: "upsample3"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "output_layer"
+        filters: 1
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "sigmoid"
+
+  hyperparameters:
+    batch_size: 64
+    epochs: 200
+    learning_rate: 0.0005
+    optimizer: "adam"
+    loss_function: "binary_crossentropy"
+
+  weights:
+    load_weights: false
+    weights_path: "path/to/weights_v2.h5"

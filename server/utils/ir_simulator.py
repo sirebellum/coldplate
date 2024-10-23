@@ -1,6 +1,9 @@
 import numpy as np
 import random
 from multiprocessing import Pool, cpu_count
+import cv2
+from base64 import b64encode
+import requests
 
 class MLX90640Simulator:
     def __init__(self, rows=24, cols=32, temp_range=(20, 39)):
@@ -91,7 +94,7 @@ class MLX90640Simulator:
                     heatmap[y + j, x + i] = np.random.uniform(min_intensity, max_intensity)
 
     def generate_batch(self, batch_size):
-        with Pool(processes=8) as pool:
+        with Pool(processes=16) as pool:
             data = pool.map(self._generate_heatmap_worker, range(batch_size))
         
         heatmaps = np.array([d[0] for d in data])
@@ -103,22 +106,18 @@ class MLX90640Simulator:
         return self.generate_heatmap()
 
     def save_heatmap(self, heatmap, filename):
-        import matplotlib.pyplot as plt
-        plt.imshow(heatmap, cmap='hot', interpolation='nearest')
-        plt.axis('off')
-        plt.savefig(filename)
+        # Grayscale image
+        heatmap = np.uint8(heatmap * 255)
+        cv2.imwrite(filename, heatmap)
 
 # Example Usage:
 if __name__ == "__main__":
     simulator = MLX90640Simulator()
-    heatmaps, labels = simulator.generate_batch(5)
-    print(heatmaps.shape)
-
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 5, figsize=(20, 5))
-    for i in range(5):
-        axes[i].imshow(heatmaps[i], cmap='hot', interpolation='nearest')
-        axes[i].axis('off')
-        axes[i].set_title(f"Label {labels[i]}")
-    plt.tight_layout()
-    plt.savefig("heatmap_samples.png")
+    heatmaps, labels = simulator.generate_batch(10240)
+    
+    for idx, heatmap in enumerate(heatmaps):
+        filename = f"heatmap_{idx}.png"
+        heatmap = np.uint8(heatmap * 255)
+        base64_image = b64encode(cv2.imencode('.png', heatmap)[1]).decode()
+        json_data = {"filename": filename, "image": base64_image}
+        response = requests.post("http://localhost:6969/upload_png", json=json_data)

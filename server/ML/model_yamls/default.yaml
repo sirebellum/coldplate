@@ -1,0 +1,126 @@
+model:
+  name: "cnn_autoencoder"
+  input_shape: [1, 24, 32]
+  
+  encoder:
+    layers:
+      - type: "Conv2D"
+        name: "conv1"
+        filters: 32
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+        input_shape: [1, 24, 32]  # Only needed for the first layer
+
+      - type: "MaxPooling2D"
+        name: "pool1"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Conv2D"
+        name: "conv2"
+        filters: 64
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "MaxPooling2D"
+        name: "pool2"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Conv2D"
+        name: "conv3"
+        filters: 128
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "MaxPooling2D"
+        name: "pool3"
+        pool_size: [2, 2]
+        stride: [2, 2]
+        padding: "valid"
+
+      - type: "Conv2D"
+        name: "conv4"
+        filters: 256
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "Flatten"
+        name: "flatten"
+
+      - type: "Dense"
+        name: "dense_latent"
+        units: 3072
+        units_out: 1536
+        activation: "sigmoid"
+
+  decoder:
+    layers:
+      - type: "Reshape"
+        name: "reshape"
+        target_shape: [128, 3, 4]
+
+      - type: "Conv2DTranspose"
+        name: "deconv1"
+        filters: 64
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "UpSampling2D"
+        name: "upsample1"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "deconv2"
+        filters: 32
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "UpSampling2D"
+        name: "upsample2"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "deconv3"
+        filters: 1
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "relu"
+
+      - type: "UpSampling2D"
+        name: "upsample3"
+        size: [2, 2]
+
+      - type: "Conv2DTranspose"
+        name: "output_layer"
+        filters: 1
+        kernel_size: [3, 3]
+        stride: [1, 1]
+        padding: "same"
+        activation: "sigmoid"
+
+  hyperparameters:
+    batch_size: 32
+    epochs: 100
+    learning_rate: 0.001
+    optimizer: "adam"
+    loss_function: "mse"
+
+  weights:
+    load_weights: false
+    weights_path: "path/to/weights.h5"

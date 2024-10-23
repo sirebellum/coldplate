@@ -2,15 +2,59 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D PCA Visualization</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        #hover-image {
+            position: absolute;
+            max-width: 400px;  /* Increased size of the image */
+            max-height: 400px;
+            display: none;
+            border: 1px solid #ccc;
+            pointer-events: none;  /* Allows mouse events to pass through the image */
+            z-index: 1000;  /* Ensures the image appears above other elements */
+        }
+        body {
+            margin: 0;
+            overflow: hidden;  /* Prevents scrollbars when the image is near the edges */
+        }
+    </style>
 </head>
 <body>
     <div id="visualization" style="width: 100%; height: 100vh;"></div>
+    <img id="hover-image" src="" alt="Hovered Image">
     <script>
-        const graphJSON = {{ graphJSON|safe }};
-        Plotly.newPlot('visualization', JSON.parse(graphJSON));
+        const graphJSON = {{ graphJSON|tojson|safe }};
+        const plotData = JSON.parse(graphJSON);
+        Plotly.newPlot('visualization', plotData.data, plotData.layout).then(function() {
+            const visualizationDiv = document.getElementById('visualization');
+            const hoverImage = document.getElementById('hover-image');
+            let isHovering = false;
+
+            visualizationDiv.on('plotly_hover', function(data){
+                const pointData = data.points[0];
+                const imageUrl = pointData.customdata;
+
+                if(imageUrl){
+                    hoverImage.src = imageUrl;
+                    hoverImage.style.display = 'block';
+                    isHovering = true;
+                }
+            });
+
+            visualizationDiv.on('plotly_unhover', function(data){
+                hoverImage.style.display = 'none';
+                isHovering = false;
+            });
+
+            visualizationDiv.addEventListener('mousemove', function(event){
+                if(isHovering){
+                    // Position the image next to the cursor with an offset
+                    hoverImage.style.left = (event.clientX + 15) + 'px';
+                    hoverImage.style.top = (event.clientY + 15) + 'px';
+                }
+            });
+        });
     </script>
 </body>
 </html>

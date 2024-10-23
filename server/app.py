@@ -1,6 +1,7 @@
-from flask import Flask, request, Response, jsonify, render_template
+from flask import Flask, request, Response, jsonify, render_template, send_from_directory
 import struct
 from PIL import Image
+import cv2
 import uuid
 import base64
 import numpy as np
@@ -13,6 +14,11 @@ from datetime import datetime
 import plotly.graph_objs as go
 from plotly.utils import PlotlyJSONEncoder
 import json
+import tempfile
+import threading
+
+# Temp files
+tempfile.tempdir = '/tmp'
 
 app = Flask(__name__)
 
@@ -24,7 +30,7 @@ IMAGE_DIR = 'images'
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # Database Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/ir_image_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://ir_user:securepassword@192.168.69.9/ir_image_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -33,7 +39,6 @@ class ImageRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     file_path = db.Column(db.String, unique=True, nullable=False)
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
-    feature_vector = db.Column(db.JSON)
 
 class ProcessedData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -42,9 +47,29 @@ class ProcessedData(db.Model):
     centroid = db.Column(db.JSON)
     encoded_vector = db.Column(db.JSON)
 
-db.create_all()
+# Ensure tables are created within the application context
+with app.app_context():
+    db.create_all()
+
+# Thread lock and running flag
+process_lock = threading.Lock()
+processing_running = False
 
 # Routes
+
+@app.route('/images/<filename>', methods=['GET'])
+def get_image(filename):
+    # Load and upsize the image
+    image = cv2.imread(os.path.join(IMAGE_DIR, filename), cv2.IMREAD_GRAYSCALE)
+    image = cv2.resize(image, (MLX90640_RESOLUTION_Y*10, MLX90640_RESOLUTION_X*10), interpolation=cv2.INTER_NEAREST)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    cv2.imwrite(temp_file.name, image)
+    return send_from_directory(tempfile.gettempdir(), os.path.basename(temp_file.name))
+
+@app.route('/', methods=['GET'])
+def home():
+    return render_template("index.html")
+
 
 # Heartbeat route
 @app.route('/heartbeat', methods=['GET'])
@@ -59,6 +84,33 @@ def get_filename():
     filename = f"{filename}_{timestamp}.png"
     return Response(filename, status=200)
 
+# Upload PNG image
+@app.route('/upload_png', methods=['POST'])
+def upload_png():
+    try:
+        # Get the data from the request
+        data = request.json
+        filename = data['filename']
+        image = data['image']
+
+        # Decode the base64 string
+        image = base64.b64decode(image)
+
+        # Save the image
+        file_path = os.path.join(IMAGE_DIR, filename)
+        with open(file_path, 'wb') as f:
+            f.write(image)
+
+        # Save reference in the database
+        new_image = ImageRecord(file_path=file_path)
+        db.session.add(new_image)
+        db.session.commit()
+
+        return Response("PNG image received", status=200)
+    except Exception as e:
+        print(f"Error processing data: {e}")
+        return Response("Failed to process data", status=500)
+
 # Upload thermal data (integrated with database)
 @app.route('/upload', methods=['GET'])
 def upload_thermal_data():
@@ -69,6 +121,7 @@ def upload_thermal_data():
 
         # Decode the base64 string
         data = base64.b64decode(data)
+        print(len(data))
 
         # Unpack the data
         unpacked_data = struct.unpack(f'{DATA_SIZE}f', data)
@@ -97,33 +150,69 @@ def upload_thermal_data():
         return Response("Failed to process data", status=500)
 
 # Trigger batch processing via endpoint
-@app.route('/process', methods=['POST'])
+@app.route('/process', methods=['GET'])
 def process_images():
-    subprocess.Popen(["python", "process_images.py"])
+    global processing_running
+    with process_lock:
+        if processing_running:
+            return jsonify({"message": "Processing is already running"}), 400
+
+        # Set the flag to indicate that processing is running
+        processing_running = True
+
+    # Start the processing in a separate thread
+    def run_processing():
+        try:
+            subprocess.run(["python", "process_images.py"])
+        finally:
+            # Reset the flag once processing is complete
+            global processing_running
+            with process_lock:
+                processing_running = False
+
+    # Launch the thread
+    threading.Thread(target=run_processing).start()
     return jsonify({"message": "Processing started"}), 200
 
 # Placeholder for interactive visualization
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
     try:
-        records = ImageRecord.query.all()
-        pca_data = [record.feature_vector for record in records if record.feature_vector]
+        processed_data = ProcessedData.query.all()
+        vector_data = []
+        labels = []
+        image_urls = []
+        for processed in processed_data:
+            if processed.encoded_vector:
+                record = ImageRecord.query.filter_by(id=processed.image_id).first()
+                vector_data.append(processed.encoded_vector)
+                labels.append(processed.cluster_id)
+                image_urls.append(record.file_path)
+            
+        colors = ['blue', 'red', 'green', 'black']
+        colors_map = {i: color for i, color in enumerate(colors)}
+        labels_color = [colors_map[label] for label in labels]
 
-        if not pca_data:
-            return jsonify({"message": "No PCA data available."}), 200
+        if not vector_data:
+            return jsonify({"message": "No Vector data available."}), 200
 
-        x = [vec[0] for vec in pca_data]
-        y = [vec[1] for vec in pca_data]
-        z = [vec[2] for vec in pca_data]
-        labels = [str(record.id) for record in records]
+        x = [vec[0] for vec in vector_data]
+        y = [vec[1] for vec in vector_data]
 
-        scatter = go.Scatter3d(
-            x=x, y=y, z=z, mode='markers',
-            marker=dict(size=5, color=labels, colorscale='Viridis', opacity=0.8)
+        scatter = go.Scatter(
+            x=x, y=y,
+            mode='markers',
+            marker=dict(
+                color=labels_color,
+                size=5,
+                opacity=0.8
+            ),
+            customdata=image_urls,
+            hoverinfo='none'  # Disable default hover info
         )
         layout = go.Layout(
-            title='3D PCA Visualization of IR Images',
-            scene=dict(xaxis_title='PC 1', yaxis_title='PC 2', zaxis_title='PC 3')
+            title='2D Cluster Visualization of IR Images',
+            scene=dict(xaxis_title='PC 1', yaxis_title='PC 2')
         )
         fig = go.Figure(data=[scatter], layout=layout)
         graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
