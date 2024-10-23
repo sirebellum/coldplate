@@ -154,8 +154,12 @@ def upload_thermal_data():
 
 def run_training():
     global training_running
+    if training_running:
+        print("Training already running.")
+        return
     with app.app_context():
         try:
+            training_running = True
             subprocess.run(["python", "train_images.py"])
         finally:
             with process_lock:
@@ -164,102 +168,86 @@ def run_training():
 
 def run_processing():
     global processing_running
+    if processing_running:
+        print("Processing already running.")
+        return
     with app.app_context():
         try:
+            processing_running = True
             subprocess.run(["python", "process_images.py"])
-            
-            # Fetch the new processed data
-            new_processed_data = ProcessedData.query.order_by(ProcessedData.id.desc()).first()
         finally:
             with process_lock:
                 processing_running = False
 
-# Trigger training via endpoint
-@app.route('/train', methods=['GET'])
-def train_model():
-    global training_running
-    with process_lock:
-        if training_running:
-            return jsonify({"message": "Training is already running"}), 400
-
-        # Set the flag to indicate that training is running
-        training_running = True
-
-    # Launch the thread as a SocketIO background task
-    socketio.start_background_task(run_training)
-    return jsonify({"message": "Training started"}), 200
-
-# Trigger processing via endpoint
-@app.route('/process', methods=['GET'])
-def process_images():
-    global processing_running
-    with process_lock:
-        if processing_running:
-            return jsonify({"message": "Processing is already running"}), 400
-
-        # Set the flag to indicate that processing is running
-        processing_running = True
-
-    # Launch the thread as a SocketIO background task
-    socketio.start_background_task(run_processing)
-    return jsonify({"message": "Processing started"}), 200
-
-
-# Updated Visualization Endpoint to Serve Static HTML
+# Endpoint for Visualization
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
-    socketio.start_background_task(emit_graph_data)
     return render_template("visualization.html")
 
-# Helper to Prepare and Emit Graph Data
-def emit_graph_data():
+# High contrast colors
+colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan', 'magenta', 'lime', 'teal', 'lavender', 'brown', 'beige', 'maroon', 'mint', 'olive', 'apricot', 'navy', 'grey', 'white', 'black']
+colors_map = {i: color for i, color in enumerate(colors)}
+def get_graph_json(x, y, labels, image_urls):
+    labels_color = [colors_map.get(label, 'black') for label in labels]
+
+    scatter = go.Scatter(
+        x=x, y=y,
+        mode='markers',
+        marker=dict(
+            color=labels_color,
+            size=5,
+            opacity=0.8
+        ),
+        customdata=image_urls
+    )
+    layout = go.Layout(
+        title='2D Cluster Visualization of IR Images',
+        xaxis=dict(title='PC 1'),
+        yaxis=dict(title='PC 2')
+    )
+    fig = go.Figure(data=[scatter], layout=layout)
+    graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
+    return graphJSON
+
+# socketio function to run in the background looping through the data
+# to emit graph points to the client
+def emit_graph():
     with app.app_context():
-        processed_data = ProcessedData.query.all()
-        vector_data = []
-        labels = []
-        image_urls = []
-        for processed in processed_data:
-            if processed.encoded_vector:
-                record = ImageRecord.query.filter_by(id=processed.image_id).first()
-                vector_data.append(processed.encoded_vector)
-                labels.append(processed.cluster_id)
-                image_urls.append(record.file_path)
-
-        # High contrast colors
-        colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan', 'magenta', 'lime', 'teal', 'lavender', 'brown', 'beige', 'maroon', 'mint', 'olive', 'apricot', 'navy', 'grey', 'white', 'black']
-        colors_map = {i: color for i, color in enumerate(colors)}
-        labels_color = [colors_map.get(label, 'black') for label in labels]
-
-        if not vector_data:
-            print("No vector data available. Emitting message.")
-            socketio.emit('update_graph', json.dumps({'message': 'No Vector data available.'}))
-            return
-
-        x = [vec[0] for vec in vector_data]
-        y = [vec[1] for vec in vector_data]
-        
-        print(f"Emitting graph with {len(x)} points.")
-
-        scatter = go.Scatter(
-            x=x, y=y,
-            mode='markers',
-            marker=dict(
-                color=labels_color,
-                size=5,
-                opacity=0.8
-            ),
-            customdata=image_urls
-        )
-        layout = go.Layout(
-            title='2D Cluster Visualization of IR Images',
-            xaxis=dict(title='PC 1'),
-            yaxis=dict(title='PC 2')
-        )
-        fig = go.Figure(data=[scatter], layout=layout)
-        graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
+        new_data = ProcessedData.query.all()
+        x = [data.encoded_vector[0] for data in new_data]
+        y = [data.encoded_vector[1] for data in new_data]
+        labels = [data.cluster_id for data in new_data]
+        image_ids = [data.image_id for data in new_data]
+        image_records = ImageRecord.query.filter(ImageRecord.id.in_(image_ids)).all()
+        image_urls = [f"/images/{image.file_path.split('/')[-1]}" for image in image_records]
+        graphJSON = get_graph_json(x, y, labels, image_urls)
         socketio.emit('update_graph', graphJSON)
+        time.sleep(1)
 
+# Handle Clear Button Event
+@socketio.on('clear_graph')
+def clear_graph():
+    print("Clear graph event received.")
+    # Emit an empty graph or reload data
+    initialData = []
+    layout = {
+        'title': '2D Cluster Visualization of IR Images',
+        'xaxis': {'title': 'PC 1'},
+        'yaxis': {'title': 'PC 2'}
+    }
+    socketio.emit('update_graph', json.dumps({'data': initialData, 'layout': layout}))
+
+# Handle Update Graph
+@socketio.on('update_graph')
+def update_graph():
+    socketio.start_background_task(run_processing)
+    socketio.start_background_task(emit_graph)
+
+# Handle Train Button Event
+@socketio.on('train_model')
+def train_model():
+    print("Train model event received.")
+    socketio.start_background_task(run_training)
 
 if __name__ == '__main__':
-    # Run the broadcasting thread to simulate real-time data updates
     socketio.run(app, host='0.0.0.0', port=6969)

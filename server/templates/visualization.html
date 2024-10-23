@@ -19,9 +19,22 @@
             margin: 0;
             overflow: hidden;
         }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2000;
+        }
+        #controls button {
+            margin: 5px;
+        }
     </style>
 </head>
 <body>
+    <div id="controls">
+        <button id="clear-button">Clear</button>
+        <button id="train-button">Train</button>
+    </div>
     <div id="visualization" style="width: 100%; height: 100vh;"></div>
     <img id="hover-image" src="" alt="Hovered Image">
     <script>
@@ -76,6 +89,23 @@
                 hoverImage.style.top = (event.clientY + 15) + 'px';
             }
         });
+
+        // Add functionality for Clear button
+        document.getElementById('clear-button').addEventListener('click', () => {
+            console.log("Clear button clicked.");
+            socket.emit('clear_graph');
+        });
+
+        // Add functionality for Train button
+        document.getElementById('train-button').addEventListener('click', () => {
+            console.log("Train button clicked.");
+            socket.emit('train_model');
+        });
+
+        // Periodically update the graph
+        setInterval(() => {
+            socket.emit('update_graph');
+        }, 10000);
     </script>
 </body>
 </html>

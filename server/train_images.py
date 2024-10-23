@@ -1,14 +1,14 @@
 import numpy as np
 import cv2
 import torch
+from sklearn.cluster import KMeans
 from models import Session, ImageRecord
 from ML.construct_model import CNNAutoencoder
 
 IR_X = 32
 IR_Y = 24
-IMAGE_DIR = 'images'
+NUM_CLUSTERS = 4  # Number of clusters for KMeans
 
-# Create a new session
 session = Session()
 
 def load_images():
@@ -23,34 +23,44 @@ def load_images():
         image_data.append(normalized_image.flatten())
     return np.array(image_data)
 
-def training_loop(model, image_data, epochs=10, batch_size=128):
-    print("Starting training loop...")
-    for epoch in range(epochs):
-        batch = image_data[epoch % len(image_data):epoch % len(image_data) + batch_size]
-        batch = torch.tensor(batch, dtype=torch.float32)
-        batch = batch.reshape(batch.shape[0], 1, IR_Y, IR_X)
+def encode_images(image_data, encoder):
+    image_data = torch.tensor(image_data, dtype=torch.float32)
+    image_data = image_data.reshape(image_data.shape[0], 1, IR_Y, IR_X)
+    batch_size = 128
+    vector_data = []
+    for i in range(0, len(image_data), batch_size):
+        batch = image_data[i:i + batch_size]
         if torch.cuda.is_available():
             batch = batch.to("cuda")
-        model.optimizer.zero_grad()
-        output = model.forward(batch)
-        loss = model.loss_function(output, batch)
-        loss.backward()
-        model.optimizer.step()
-        print(f"Epoch {epoch + 1}: Loss = {loss.item()}")
-    print("Training complete!")
-    return model
+        vector = encoder(batch).cpu().detach().numpy()
+        vector_data.append(vector)
+    return np.concatenate(vector_data, axis=0)
+
+def train_kmeans(image_data, num_clusters=NUM_CLUSTERS):
+    print("Training KMeans...")
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    kmeans.fit(image_data)
+    torch.save(kmeans, "kmeans_model.pth")
+    print("KMeans model saved.")
 
 def main():
     image_data = load_images()
-    autoencoder = CNNAutoencoder("ML/model_yamls/visualizer.yaml")
-    print(autoencoder)
-    if torch.cuda.is_available():
-        autoencoder = autoencoder.to("cuda")
-    autoencoder = training_loop(autoencoder, image_data, epochs=4200, batch_size=128)
+    if len(image_data) == 0:
+        print("No images to train on.")
+        return
 
-    # Save the encoder weights to disk
-    torch.save(autoencoder.get_encoder().state_dict(), "encoder_weights.pth")
-    print("Encoder weights saved.")
+    # Load the encoder weights
+    encoder = CNNAutoencoder("ML/model_yamls/visualizer.yaml").get_encoder()
+    encoder.load_state_dict(torch.load("encoder_weights.pth"))
+    if torch.cuda.is_available():
+        encoder = encoder.to("cuda")
+
+    vector_data = encode_images(image_data, encoder)
+
+    # Train and save KMeans and t-SNE
+    train_kmeans(vector_data)
+
+    print("Training complete.")
 
 if __name__ == "__main__":
     main()
