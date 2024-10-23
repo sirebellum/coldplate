@@ -208,20 +208,8 @@ def process_images():
 # Updated Visualization Endpoint to Serve Static HTML
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
+    socketio.start_background_task(emit_graph_data)
     return render_template("visualization.html")
-
-def broadcast_data():
-    while True:
-        socketio.sleep(5)  # Adjust the interval as needed
-        # Emit graph data within an application context
-        with app.app_context():
-            emit_graph_data()
-
-# Function to Send Data on Demand
-@socketio.on('request_data')
-def handle_request_data():
-    with app.app_context():
-        emit_graph_data()
 
 # Helper to Prepare and Emit Graph Data
 def emit_graph_data():
@@ -274,5 +262,4 @@ def emit_graph_data():
 
 if __name__ == '__main__':
     # Run the broadcasting thread to simulate real-time data updates
-    socketio.start_background_task(broadcast_data)
     socketio.run(app, host='0.0.0.0', port=6969)

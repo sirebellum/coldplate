@@ -76,17 +76,6 @@
                 hoverImage.style.top = (event.clientY + 15) + 'px';
             }
         });
-
-        // Periodic call to /process endpoint
-        setInterval(() => {
-            fetch('/process')
-                .then(response => response.json())
-                .then(data => {
-                    console.log("Processed data:", data);
-                    // Optionally update the graph based on the response data
-                })
-                .catch(error => console.error('Error fetching /process:', error));
-        }, 6000);
     </script>
 </body>
 </html>
