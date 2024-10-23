@@ -66,7 +66,7 @@
 // KMeans stuff
 #define KMEANS_CENTROIDS 3
 #define KMEANS_DIMENSIONALITY 768
-#define KMEANS_SCALE_FACTOR 10000000000
+#define KMEANS_SCALE_FACTOR 100000000
 
 #define DEBUG 1 // Set to 0 to disable Serial prints
 
@@ -92,8 +92,9 @@ void adc_init();
 void display_splash_screen(String message, const uint16_t splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16], Adafruit_SSD1306 *display);
 int32_t calculate_max_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]);
 int32_t calculate_min_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]);
-uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY]);
+uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], uint32_t *centroids, uint8_t num_clusters);
 bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y*MLX90640_RESOLUTION_X]);
 bool detect_food(int *adc_samples);
+void pull_centroids(uint32_t *centroids, uint8_t *num_clusters);
 
 #endif

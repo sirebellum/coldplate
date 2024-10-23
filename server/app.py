@@ -17,6 +17,7 @@ import json
 import tempfile
 import threading
 from flask_socketio import SocketIO, emit, join_room
+import torch
 
 # Temp files
 tempfile.tempdir = '/tmp'
@@ -80,6 +81,23 @@ def home():
 @app.route('/heartbeat', methods=['GET'])
 def heartbeat():
     return Response("Alive", status=200)
+
+# Serve kmeans weights
+@app.route('/serve_centroids', methods=['GET'])
+def serve_centroids():
+    kmeans_file = 'kmeans_deploy.pth'
+    kmeans = torch.load(kmeans_file)
+    centroids = kmeans.cluster_centers_
+    centroids_int = (centroids * 100000000).astype(np.uint32)
+    centroids_bytes = centroids_int.tobytes()
+    centroids_base64 = base64.b64encode(centroids_bytes).decode('utf-8')
+    return Response(centroids_base64, status=200)
+
+@app.route('/centroids_count', methods=['GET'])
+def centroids_count():
+    kmeans_file = 'kmeans_deploy.pth'
+    kmeans = torch.load(kmeans_file)
+    return Response(str(kmeans.n_clusters), status=200)
 
 # Get filename
 @app.route('/filename', methods=['GET'])

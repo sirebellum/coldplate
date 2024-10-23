@@ -257,7 +257,7 @@ int32_t calculate_min_temp(uint8_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTIO
     return min_temp;
 }
 
-uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centroids[KMEANS_CENTROIDS][KMEANS_DIMENSIONALITY]) {
+uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], uint32_t *centroids, uint8_t num_clusters) {
     uint8_t closest_centroid = 0;
     uint64_t min_distance = UINT64_MAX;
 
@@ -267,7 +267,7 @@ uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centr
     DEBUG_PRINTLN("Starting k-means clustering...");
 
     // Loop through each centroid
-    for (uint8_t i = 0; i < KMEANS_CENTROIDS; i++) {
+    for (uint8_t i = 0; i < num_clusters; i++) {
         uint64_t distance = 0;
 
         // DEBUG_PRINT("Centroid "); DEBUG_PRINT(i); DEBUG_PRINTLN(":");
@@ -277,7 +277,7 @@ uint8_t kmeans_cluster(uint8_t data[KMEANS_DIMENSIONALITY], const uint32_t centr
             // Scale the input data to match the scaled centroids using the multiplier
             uint32_t scaled_data = (uint32_t)data[j] * scale_multiplier;
             // Pull from PROGMEM
-            uint32_t centroid = pgm_read_dword(&centroids[i][j]);
+            uint32_t centroid = centroids[i*KMEANS_DIMENSIONALITY + j];
             // Handle underflow
             uint32_t diff;
             if (scaled_data > centroid) {
