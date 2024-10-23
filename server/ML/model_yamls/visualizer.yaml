@@ -84,14 +84,14 @@ model:
       - type: "Dense"
         name: "dense_latent0"
         units: 512
-        units_out: 128
+        units_out: 32
         activation: "sigmoid"
 
   decoder:
     layers:
       - type: "Dense"
         name: "dense_reshape"
-        units: 128
+        units: 32
         units_out: 768
         activation: "relu"
 

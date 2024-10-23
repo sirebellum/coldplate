@@ -41,6 +41,7 @@ class ImageRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     file_path = db.Column(db.String, unique=True, nullable=False)
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
+    img_class = db.Column(db.Integer)
 
 class ProcessedData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -182,6 +183,7 @@ def run_processing():
 # Endpoint for Visualization
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
+    socketio.start_background_task(emit_graph)
     return render_template("visualization.html")
 
 # High contrast colors
@@ -240,14 +242,59 @@ def clear_graph():
 # Handle Update Graph
 @socketio.on('update_graph')
 def update_graph():
-    socketio.start_background_task(run_processing)
+    print("Update graph event received.")
     socketio.start_background_task(emit_graph)
+
+# Handle Process Button Event
+@socketio.on('process_images')
+def process_images():
+    print("Process images event received.")
+    socketio.start_background_task(run_processing)
 
 # Handle Train Button Event
 @socketio.on('train_model')
 def train_model():
     print("Train model event received.")
     socketio.start_background_task(run_training)
+
+# Handle Status
+@socketio.on('status')
+def status():
+    print("Status event received.")
+    emit('status_response', {'processing_running': processing_running, 'training_running': training_running})
+
+@socketio.on('label_multiple_data')
+def label_multiple_data(data):
+    print(f"Label multiple data received: {data}")
+    selected_points = data['selectedPoints']
+    class_label = data['class']
+
+    for point in selected_points:
+        x = point['x']
+        y = point['y']
+        image_url = point['imageUrl']
+
+        # Example logic to extract image ID and save to database
+        image_id = extract_image_id_from_url(image_url)
+        existing_data = ProcessedData.query.filter_by(encoded_vector=[x, y], image_id=image_id).first()
+
+        if existing_data:
+            # Update existing data point
+            existing_data.cluster_id = class_label
+        else:
+            # Create new entry if not found
+            new_data = ProcessedData(encoded_vector=[x, y], cluster_id=class_label, image_id=image_id)
+            db.session.add(new_data)
+
+    db.session.commit()
+    print(f"Applied class {class_label} to {len(selected_points)} points.")
+
+def extract_image_id_from_url(image_url):
+    # Implement extraction of image ID from the URL, depending on how your image paths are structured
+    file_name = image_url.split('/')[-1]
+    image_record = ImageRecord.query.filter_by(file_path=file_name).first()
+    return image_record.id if image_record else None
+
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=6969)

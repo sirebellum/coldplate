@@ -78,7 +78,11 @@ def main():
     if not os.path.exists("encoder_weights.pth"):
         print("Encoder weights not found.")
         return
-    encoder.load_state_dict(torch.load("encoder_weights.pth"))
+    try:
+        encoder.load_state_dict(torch.load("encoder_weights.pth"))
+    except RuntimeError:
+        print("Error loading encoder weights.")
+        return
     if torch.cuda.is_available():
         encoder = encoder.to("cuda")
 

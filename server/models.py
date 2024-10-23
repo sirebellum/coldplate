@@ -16,6 +16,7 @@ class ImageRecord(Base):
     id = Column(Integer, primary_key=True)
     file_path = Column(String, unique=True, nullable=False)
     upload_time = Column(DateTime, default=datetime.utcnow)
+    img_class = Column(Integer)
 
 # Define ProcessedData model
 class ProcessedData(Base):

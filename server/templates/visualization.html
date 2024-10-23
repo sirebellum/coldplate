@@ -1,11 +1,97 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2D Cluster Visualization</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.min.js"></script>
     <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            background-color: #fff;
+            padding: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 2000;
+        }
+
+        #controls button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin-right: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            font-size: 14px;
+        }
+
+        #controls select {
+            padding: 10px;
+            margin-right: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        #controls button:hover {
+            background-color: #0056b3;
+        }
+
+        #controls button:focus {
+            outline: none;
+        }
+
+        #visualization-container {
+            display: flex;
+            flex-direction: row; /* Horizontal layout */
+        }
+
+        #visualization {
+            flex: 3;
+            resize: both;
+            overflow: auto;
+            border: 1px solid #ccc;
+        }
+
+        #selected-images-container {
+            flex: 1;
+            padding: 10px;
+            background-color: #ffffff;
+            overflow-y: auto;
+            border-left: 1px solid #ccc;
+            height: calc(100vh - 50px); /* Ensure it occupies the full height minus the controls */
+        }
+
+        #selected-images img {
+            width: 80px;
+            height: 80px;
+            margin: 5px;
+            cursor: pointer;
+            border: 2px solid #007bff;
+            border-radius: 5px;
+        }
+
+        #selected-images img:hover {
+            border-color: red;
+        }
+
+        #selected-images h3 {
+            margin-top: 0;
+        }
+
         #hover-image {
             position: absolute;
             max-width: 400px;
@@ -15,34 +101,47 @@
             pointer-events: none;
             z-index: 1000;
         }
-        body {
-            margin: 0;
-            overflow: hidden;
-        }
-        #controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 2000;
-        }
-        #controls button {
-            margin: 5px;
-        }
     </style>
 </head>
+
 <body>
     <div id="controls">
+        <div id="status-indicator" style="width: 10px; height: 10px; border-radius: 50%; background-color: gray; margin-right: 10px;"></div>
         <button id="clear-button">Clear</button>
         <button id="train-button">Train</button>
+        <button id="process-button">Process</button>
+        <select id="class-selector">
+            <option value="0">Class 0</option>
+            <option value="1">Class 1</option>
+            <option value="2">Class 2</option>
+            <option value="3">Class 3</option>
+            <option value="4">Class 4</option>
+            <option value="5">Class 5</option>
+            <option value="6">Class 6</option>
+            <option value="7">Class 7</option>
+            <option value="8">Class 8</option>
+            <option value="9">Class 9</option>
+        </select>
+        <button id="apply-class-button">Apply Class</button>
     </div>
-    <div id="visualization" style="width: 100%; height: 100vh;"></div>
+    <div id="visualization-container">
+        <div id="visualization"></div>
+        <div id="selected-images-container">
+            <h3>Selected Images</h3>
+            <div id="selected-images"></div>
+        </div>
+    </div>
     <img id="hover-image" src="" alt="Hovered Image">
+
     <script>
         const socket = io.connect('http://' + document.domain + ':' + location.port);
         let isHovering = false;
         const hoverImage = document.getElementById('hover-image');
         const visualizationDiv = document.getElementById('visualization');
-        
+        const statusIndicator = document.getElementById('status-indicator');
+        const selectedPoints = [];
+        const selectedImagesContainer = document.getElementById('selected-images');
+
         // Initialize Plotly with empty data
         const initialData = [{
             x: [],
@@ -56,38 +155,122 @@
             xaxis: { title: 'PC 1' },
             yaxis: { title: 'PC 2' }
         };
-        
+
         Plotly.newPlot('visualization', initialData, layout);
 
         // Listen for graph updates
-        socket.on('update_graph', function(graphJSON) {
+        socket.on('update_graph', function (graphJSON) {
             console.log("Received graph data:", graphJSON);
             const plotData = JSON.parse(graphJSON);
             Plotly.react('visualization', plotData.data, plotData.layout);
         });
 
         // Hover handlers
-        visualizationDiv.on('plotly_hover', function(data){
+        visualizationDiv.on('plotly_hover', function (data) {
             const pointData = data.points[0];
             const imageUrl = pointData.customdata;
 
-            if(imageUrl){
+            if (imageUrl) {
                 hoverImage.src = imageUrl;
                 hoverImage.style.display = 'block';
                 isHovering = true;
             }
         });
 
-        visualizationDiv.on('plotly_unhover', function(data){
+        visualizationDiv.on('plotly_unhover', function () {
             hoverImage.style.display = 'none';
             isHovering = false;
         });
 
-        visualizationDiv.addEventListener('mousemove', function(event){
-            if(isHovering){
+        visualizationDiv.addEventListener('mousemove', function (event) {
+            if (isHovering) {
                 hoverImage.style.left = (event.clientX + 15) + 'px';
                 hoverImage.style.top = (event.clientY + 15) + 'px';
             }
+        });
+
+        // Listen for status updates from the server
+        socket.on('status_response', function (statusData) {
+            const { processing_running, training_running } = statusData;
+
+            // Update the color of the status indicator based on the server status
+            if (processing_running) {
+                statusIndicator.style.backgroundColor = 'orange'; // Processing is running
+            } else if (training_running) {
+                statusIndicator.style.backgroundColor = 'blue'; // Training is running
+            } else {
+                statusIndicator.style.backgroundColor = 'green'; // Idle/ready
+            }
+        });
+
+        // Handle point selection for multiple points
+        visualizationDiv.on('plotly_click', function (data) {
+            const pointData = data.points[0];
+            const x = pointData.x;
+            const y = pointData.y;
+            const imageUrl = pointData.customdata;
+
+            // Check if the point is already selected
+            const exists = selectedPoints.find(p => p.x === x && p.y === y && p.imageUrl === imageUrl);
+            if (!exists) {
+                // Add to selected points array
+                selectedPoints.push({ x, y, imageUrl });
+
+                // Add thumbnail to the selected images container
+                const imgElement = document.createElement('img');
+                imgElement.src = imageUrl;
+                imgElement.dataset.x = x;
+                imgElement.dataset.y = y;
+                imgElement.dataset.imageUrl = imageUrl;
+                imgElement.addEventListener('click', () => {
+                    removeSelectedImage(x, y, imageUrl);
+                });
+
+                selectedImagesContainer.appendChild(imgElement);
+            }
+
+            console.log("Selected Points:", selectedPoints);
+        });
+
+        // Function to remove an image from the selected list
+        function removeSelectedImage(x, y, imageUrl) {
+            // Remove from selected points array
+            const index = selectedPoints.findIndex(p => p.x === x && p.y === y && p.imageUrl === imageUrl);
+            if (index > -1) {
+                selectedPoints.splice(index, 1);
+            }
+
+            // Remove the thumbnail from the container
+            const imgElements = selectedImagesContainer.querySelectorAll('img');
+            imgElements.forEach(img => {
+                if (img.dataset.x == x && img.dataset.y == y && img.dataset.imageUrl === imageUrl) {
+                    img.remove();
+                }
+            });
+
+            console.log("Updated Selected Points:", selectedPoints);
+        }
+
+        // Handle Apply Class button click
+        document.getElementById('apply-class-button').addEventListener('click', () => {
+            const selectedClass = parseInt(document.getElementById('class-selector').value);
+
+            if (selectedPoints.length === 0) {
+                alert("No points selected.");
+                return;
+            }
+
+            console.log(`Applying class ${selectedClass} to selected points.`);
+
+            // Emit the selected points and class to the backend
+            socket.emit('label_multiple_data', {
+                selectedPoints: selectedPoints,
+                class: selectedClass
+            });
+
+            // Clear the selection and UI after applying
+            selectedPoints.length = 0;
+            selectedImagesContainer.innerHTML = '';
         });
 
         // Add functionality for Clear button
@@ -102,10 +285,21 @@
             socket.emit('train_model');
         });
 
+        // Add functionality for Process button
+        document.getElementById('process-button').addEventListener('click', () => {
+            console.log("Process button clicked.");
+            socket.emit('process_images');
+        });
+
         // Periodically update the graph
         setInterval(() => {
             socket.emit('update_graph');
         }, 10000);
+
+        // Request status updates periodically
+        setInterval(() => {
+            socket.emit('status');
+        }, 1000);
     </script>
 </body>
 </html>

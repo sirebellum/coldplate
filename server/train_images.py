@@ -40,8 +40,30 @@ def train_kmeans(image_data, num_clusters=NUM_CLUSTERS):
     print("Training KMeans...")
     kmeans = KMeans(n_clusters=num_clusters, random_state=42)
     kmeans.fit(image_data)
-    torch.save(kmeans, "kmeans_model.pth")
     print("KMeans model saved.")
+    return kmeans
+
+def train_autoencoder(autoencoder, image_data):
+    print("Training autoencoder...")
+    image_data = torch.tensor(image_data, dtype=torch.float32)
+    image_data = image_data.reshape(image_data.shape[0], 1, IR_Y, IR_X)
+    batch_size = 128
+    num_epochs = 100
+    criterion = autoencoder.loss_function
+    optimizer = autoencoder.optimizer
+    for epoch in range(num_epochs):
+        for i in range(0, len(image_data), batch_size):
+            batch = image_data[i:i + batch_size]
+            if torch.cuda.is_available():
+                batch = batch.to("cuda")
+            optimizer.zero_grad()
+            output = autoencoder(batch)
+            loss = criterion(output, batch)
+            loss.backward()
+            optimizer.step()
+        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}")
+    print("Autoencoder training complete.")
+    return autoencoder
 
 def main():
     image_data = load_images()
@@ -49,16 +71,22 @@ def main():
         print("No images to train on.")
         return
 
-    # Load the encoder weights
-    encoder = CNNAutoencoder("ML/model_yamls/visualizer.yaml").get_encoder()
-    encoder.load_state_dict(torch.load("encoder_weights.pth"))
+    # Load the autoencoder
+    autoencoder = CNNAutoencoder("ML/model_yamls/visualizer.yaml")
     if torch.cuda.is_available():
-        encoder = encoder.to("cuda")
-
+        autoencoder = autoencoder.to("cuda")
+    autoencoder = train_autoencoder(autoencoder, image_data)
+    encoder = autoencoder.get_encoder()
+    
+    # Encode the images
     vector_data = encode_images(image_data, encoder)
 
-    # Train and save KMeans and t-SNE
-    train_kmeans(vector_data)
+    # Train KMeans
+    kmeans = train_kmeans(vector_data)
+
+    # Save the models
+    torch.save(kmeans, "kmeans_model.pth")
+    torch.save(encoder.state_dict(), "encoder_weights.pth")
 
     print("Training complete.")
 
