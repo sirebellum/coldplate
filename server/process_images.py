@@ -8,7 +8,7 @@ from ML.construct_model import CNNAutoencoder
 
 IMAGE_DIR = 'images'
 TSNE_COMPONENTS = 2  # Number of components for t-SNE
-NUM_CLUSTERS = 4
+NUM_CLUSTERS = 4  # Number of clusters for KMeans
 
 IR_X = 32
 IR_Y = 24
@@ -43,6 +43,10 @@ def apply_tsne(image_data, n_components=TSNE_COMPONENTS):
     return tsne_data
 
 def save_processed_data(labels, vector_data, image_records):
+    # Drop current processed data
+    session.query(ProcessedData).delete()
+    session.commit()
+
     print("Saving processed data...")
     for i, label in enumerate(labels):
         if np.isnan(vector_data[i]).any():
@@ -74,7 +78,7 @@ def main():
     print(autoencoder)
     if torch.cuda.is_available():
         autoencoder = autoencoder.to("cuda")
-    autoencoder = training_loop(autoencoder, image_data, epochs=1000, batch_size=128)
+    autoencoder = training_loop(autoencoder, image_data, epochs=4200, batch_size=128)
 
     encoder = autoencoder.get_encoder()
     if torch.cuda.is_available():

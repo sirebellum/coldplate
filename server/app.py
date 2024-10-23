@@ -189,7 +189,8 @@ def get_visualization():
                 labels.append(processed.cluster_id)
                 image_urls.append(record.file_path)
             
-        colors = ['blue', 'red', 'green', 'black']
+        # high contrast colors
+        colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan', 'magenta', 'lime', 'teal', 'lavender', 'brown', 'beige', 'maroon', 'mint', 'olive', 'apricot', 'navy', 'grey', 'white', 'black']
         colors_map = {i: color for i, color in enumerate(colors)}
         labels_color = [colors_map[label] for label in labels]
 
@@ -208,7 +209,7 @@ def get_visualization():
                 opacity=0.8
             ),
             customdata=image_urls,
-            hoverinfo='none'  # Disable default hover info
+            # hoverinfo='none'  # Disable default hover info
         )
         layout = go.Layout(
             title='2D Cluster Visualization of IR Images',

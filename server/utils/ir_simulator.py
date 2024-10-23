@@ -113,7 +113,7 @@ class MLX90640Simulator:
 # Example Usage:
 if __name__ == "__main__":
     simulator = MLX90640Simulator()
-    heatmaps, labels = simulator.generate_batch(10240)
+    heatmaps, labels = simulator.generate_batch(42000)
     
     for idx, heatmap in enumerate(heatmaps):
         filename = f"heatmap_{idx}.png"
