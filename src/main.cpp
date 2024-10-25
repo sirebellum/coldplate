@@ -153,60 +153,12 @@ const uint16_t snowflake_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = 
     {0x0000, 0x0180, 0x0000},
     {0x0000, 0x0000, 0x0000},
 };
-const uint16_t ultrasonic_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0003, 0x8000},
-    {0x0000, 0x0003, 0xE000},
-    {0x0000, 0x0001, 0xF800},
-    {0x0000, 0x0000, 0x3C00},
-    {0x0000, 0x0004, 0x0F00},
-    {0x0000, 0x000F, 0x0780},
-    {0x0000, 0x0007, 0xC3C0},
-    {0x0000, 0x0001, 0xE1C0},
-    {0x0000, 0x0000, 0xF0E0},
-    {0x0000, 0x000C, 0x3870},
-    {0x0000, 0x001E, 0x1C70},
-    {0x0000, 0x3C0F, 0x8E38},
-    {0x0000, 0x7F83, 0xC718},
-    {0x0000, 0xFFC1, 0xC71C},
-    {0x0000, 0xE1E0, 0xE398},
-    {0x0000, 0xE078, 0x7380},
-    {0x0000, 0xE03C, 0x7000},
-    {0x0000, 0x601E, 0x0000},
-    {0x0000, 0x600E, 0x0000},
-    {0x0000, 0x6007, 0x0000},
-    {0x0000, 0xE003, 0x8000},
-    {0x0001, 0xC003, 0x8000},
-    {0x0003, 0xC001, 0xC000},
-    {0x0007, 0x9801, 0xC000},
-    {0x000F, 0x3801, 0xC000},
-    {0x001E, 0x79FB, 0xC000},
-    {0x003C, 0x63FF, 0x8000},
-    {0x0078, 0x079E, 0x0000},
-    {0x00F0, 0x0E00, 0x0000},
-    {0x01C0, 0x1C00, 0x0000},
-    {0x0180, 0x3800, 0x0000},
-    {0x0380, 0x7000, 0x0000},
-    {0x0381, 0xE000, 0x0000},
-    {0x0383, 0xC000, 0x0000},
-    {0x0387, 0x8000, 0x0000},
-    {0x03FF, 0x0000, 0x0000},
-    {0x03FE, 0x0000, 0x0000},
-    {0x0FE0, 0x0000, 0x0000},
-    {0x1E00, 0x0000, 0x0000},
-    {0x1C00, 0x0000, 0x0000},
-    {0x1800, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-    {0x0000, 0x0000, 0x0000},
-};
 
 // Kmeans centroids
-uint32_t *centroids;
-uint8_t centroids_count;
+uint16_t *_centroids = nullptr;
+uint16_t **centroids = &_centroids;
+uint8_t centroids_count = 0;
+unsigned int centroids_pull_time = 0;
 
 // Create an SSD1306 display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -224,7 +176,6 @@ int adc_values[ADC_SAMPLES];
 // Network stuff
 const char* ssid = "Mordor";
 const char* password = "0ned0esn0tsimplyl0gint0m0rd0r";
-const char* filenameUrl = "http://192.168.69.9:6969/filename";
 const char* uploadUrl = "http://192.168.69.9:6969/upload";
 const char* centroidscountUrl = "http://192.168.69.9:6969/centroids_count";
 const char* centroidsUrl = "http://192.168.69.9:6969/serve_centroids";
@@ -233,13 +184,9 @@ const char* centroidsUrl = "http://192.168.69.9:6969/serve_centroids";
 WiFiClient client;
 HTTPClient http;
 
-// Ultrasonic time tracking
-unsigned long ultrasonic_start_time = 0;
-unsigned long ultrasonic_end_time = 0;
-
 // IR buffers
 float ir_data[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
-uint8_t mlx_buffer[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
+uint16_t mlx_buffer[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
 
 void setup() {
     Serial.begin(9600);
@@ -255,7 +202,6 @@ void setup() {
     display_splash_screen("Initializing...", caution_splashscreen, &display);
 
     pwm_init();
-    ultrasonic_init();
     adc_init();
 
     pinMode(TEG_PIN, OUTPUT);
@@ -263,20 +209,19 @@ void setup() {
     digitalWrite(TEG_PIN, LOW);
     digitalWrite(TEG_AUX_PIN, LOW);
 
-    ultrasonic_start_time = millis();
-    ultrasonic_start();
-
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
         display_splash_screen("Connecting to WiFi...", caution_splashscreen, &display);
         delay(500);
     }
 
-    pull_centroids(centroids, &centroids_count);
+    centroids_count = pull_centroids(centroids);
+    centroids_pull_time = millis();
 
-    mlx.begin();
-    mlx.setRefreshRate(MLX90640_16_HZ);
-    mlx.setMode(MLX90640_INTERLEAVED);
+    mlx.begin(MLX90640_I2C_ADDR, &Wire);
+    mlx.setMode(MLX90640_CHESS);
+    mlx.setResolution(MLX90640_ADC_16BIT);
+    mlx.setRefreshRate(MLX90640_1_HZ);
 
     sht35.begin(0x44);
 }
@@ -287,7 +232,7 @@ void loop(void) {
 
     // Convert the IR data to a buffer
     for (int i = 0; i < MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y; i++) {
-        mlx_buffer[i] = ir_data[i];
+        mlx_buffer[i] = ir_data[i] * 100;
     }
 
     // Get temps
@@ -303,6 +248,8 @@ void loop(void) {
         hot_temp = water_temp;
         cold_temp = TEMP_IDLE;
         temp_diff = hot_temp - cold_temp;
+    } else {
+        mlx_detected = true;
     }
 
     // If the sensor is detected, upload the data
@@ -310,19 +257,16 @@ void loop(void) {
         uploadThermalData(ir_data);
     }
 
-    // Detect food
-    bool food_detected = detect_food(adc_values);
-
     // Adjust TEG power, pump speed, and fan speed based on temperature readings
-    adjust_teg_power(hot_temp, cold_temp, food_detected);
-    adjust_aux_teg_power(hot_temp, cold_temp);
-    adjust_pump_speed(temp_diff);
-    adjust_fan_speed(hot_temp);
+    adjust_teg_power(cold_temp);
+    adjust_aux_teg_power(water_temp);
+    adjust_pump_speed(water_temp);
+    adjust_fan_speed(water_temp);
 
     // Perform kmeans clustering
     bool cat_detected;
-    if (mlx_detected) {
-        cat_detected = kmeans_cluster(mlx_buffer, centroids, centroids_count) > 0;
+    if (mlx_detected && *centroids != nullptr) {
+        cat_detected = kmeans_cluster(mlx_buffer, *centroids, centroids_count) > 0;
     } else {
         cat_detected = false;
     }
@@ -330,48 +274,56 @@ void loop(void) {
     // Update the display (1 decimal point)
     char hot_temp_str[6];
     char cold_temp_str[6];
+    char water_temp_str[6];
     dtostrf(hot_temp / 100.0, 4, 1, hot_temp_str);
     dtostrf(cold_temp / 100.0, 4, 1, cold_temp_str);
-    String message = "Hot: " + String(hot_temp_str) + " Cold: " + String(cold_temp_str);
+    dtostrf(water_temp / 100.0, 4, 1, water_temp_str);
+    String message = String(hot_temp_str) + " " + String(cold_temp_str) + " " + String(water_temp_str);
     if (cat_detected) {
         display_splash_screen(message, cat_splashscreen, &display);
-    } else if (digitalRead(PWM_ULTRASONIC_PIN) > 0) {
-        display_splash_screen(message, ultrasonic_splashscreen, &display);
     } else {
         display_splash_screen(message, snowflake_splashscreen, &display);
     }
 
-    // Check ultrasonic cleaning status
-    check_ultrasonic_cleaning(cat_detected, &ultrasonic_start_time, &ultrasonic_end_time);
+    // Pull the centroids every 2 hours
+    if (millis() - centroids_pull_time > 7200000) {
+        centroids_count = pull_centroids(centroids);
+        centroids_pull_time = millis();
+    }
 }
 
 // Function to pull the latest centroids from the server
-void pull_centroids(uint32_t *centroids, uint8_t *centroids_count) {
+uint8_t pull_centroids(uint16_t **centroids) {
     if (WiFi.status() != WL_CONNECTED) {
         DEBUG_PRINTLN("WiFi not connected");
-        return;
+        return -1;
     }
 
     // Get the number of centroids
     http.begin(client, centroidscountUrl);
     DEBUG_PRINTLN("Getting centroids count...");
     int httpResponseCode = http.GET();
+    uint8_t centroids_count;
     if (httpResponseCode == 200) {
         DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        *centroids_count = (uint8_t)http.getString().toInt();
+        centroids_count = (uint8_t)http.getString().toInt();
+        DEBUG_PRINT("Centroids count: "); DEBUG_PRINTLN(centroids_count);
     } else {
         DEBUG_PRINT("Error on sending GET: ");
         DEBUG_PRINTLN(httpResponseCode);
-        return;
+        http.end();
+        return -1;
+    }
+    http.end();
+
+    // Deallocate memory if it exists
+    if (*centroids != nullptr) {
+        free(*centroids);
     }
 
     // Allocate memory for the centroids
-    centroids = (uint32_t *)malloc(*centroids_count * KMEANS_DIMENSIONALITY * sizeof(uint32_t));
-    int size_centroids_base64 = 4 * ((*centroids_count * KMEANS_DIMENSIONALITY * sizeof(uint32_t) + 2) / 3);
-    if (size_centroids_base64 % 4) {
-        size_centroids_base64 += 4 - (size_centroids_base64 % 4);
-    }
-    unsigned char *centroids_base64 = (unsigned char *)malloc(size_centroids_base64 + 1);
+    int centroids_size = centroids_count * KMEANS_DIMENSIONALITY * sizeof(uint16_t);
+    *centroids = (uint16_t *)malloc(centroids_size);
 
     // Get the centroids
     http.begin(client, centroidsUrl);
@@ -379,17 +331,17 @@ void pull_centroids(uint32_t *centroids, uint8_t *centroids_count) {
     httpResponseCode = http.GET();
     if (httpResponseCode == 200) {
         DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        String centroids_str = http.getString();
-        DEBUG_PRINTLN(centroids_str);
-        encode_base64((unsigned char*)centroids_str.c_str(), centroids_str.length(), centroids_base64);
-        for (int i = 0; i < *centroids_count * KMEANS_DIMENSIONALITY; i++) {
-            centroids[i] = (uint32_t)centroids_base64[i];
-        }
+        DEBUG_PRINTLN("Centroids pulled successfully.");
+        DEBUG_PRINT("Centroids count: "); DEBUG_PRINTLN(centroids_size);
     } else {
         DEBUG_PRINT("Error on sending GET: ");
         DEBUG_PRINTLN(httpResponseCode);
-        return;
+        http.end();
+        return -1;
     }
+    http.end();
+
+    return centroids_count;
 }
 
 // Function to send MLX90640 data array
@@ -399,63 +351,44 @@ bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUT
         return false;
     }
 
-    // Get filename
-    String filename;
-    http.begin(client, filenameUrl);
-    DEBUG_PRINTLN("Getting filename...");
-    int httpResponseCode = http.GET();
-    if (httpResponseCode == 200) {
-        DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        filename = http.getString();
-        DEBUG_PRINTLN(filename);
-    } else {
-        DEBUG_PRINT("Error on sending GET: ");
-        DEBUG_PRINTLN(httpResponseCode);
-        return false;
-    }
-    http.end();
+    // Prepare data for POST
+    String postUrl = uploadUrl;
+    String payload;
+    payload += "{\"data\":\"";
 
-    String base_url = uploadUrl;
-    base_url += "?filename=";
-    base_url += filename;
-    base_url += "&data=";
-    size_t base_url_size = base_url.length();
-
-    // get URL buffer
-    size_t byte_size, base64_size;
-    byte_size = MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y * sizeof(float);
-    base64_size = 4 * ((byte_size + 2) / 3);
+    // Encode the data to base64
+    size_t byte_size = MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y * sizeof(float);
+    size_t base64_size = 4 * ((byte_size + 2) / 3);
     if (base64_size % 4) {
         base64_size += 4 - (base64_size % 4);
     }
-    unsigned char *getUrl = (unsigned char *)malloc(base_url_size + base64_size + 1);
-    
-    // Zero out the buffer
-    memset(getUrl, 0, base_url_size + base64_size + 1);
+    unsigned char *encodedData = (unsigned char *)malloc(base64_size + 1);
+    encode_base64((unsigned char*)data, byte_size, encodedData);
 
-    // Copy the base url
-    memcpy(getUrl, base_url.c_str(), base_url_size);
+    // Add encoded data to the payload
+    payload += String((char*)encodedData);
+    payload += "\"}";
 
-    // Encode the data
-    encode_base64((unsigned char*)data, byte_size, getUrl + base_url_size);
-
-    // Send the data
-    http.begin(client, (const char*)getUrl);
+    // Send POST request
+    http.begin(client, postUrl);
+    http.addHeader("Content-Type", "application/json");
     DEBUG_PRINTLN("Uploading thermal data...");
-    httpResponseCode = http.GET();
+    int httpResponseCode = http.POST(payload);
     if (httpResponseCode == 200) {
         DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
     } else {
-        DEBUG_PRINT("Error on sending GET: ");
+        DEBUG_PRINT("Error on sending POST: ");
         DEBUG_PRINTLN(httpResponseCode);
         // Deallocate
-        free(getUrl);
+        free(encodedData);
+        http.end();
         return false;
     }
 
     DEBUG_PRINTLN("Thermal data upload complete.");
     // Deallocate
-    free(getUrl);
+    free(encodedData);
+    http.end();
     return true;
 }
 
