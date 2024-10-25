@@ -165,7 +165,6 @@
             Plotly.react('visualization', plotData.data, plotData.layout);
         });
 
-        // Hover handlers
         visualizationDiv.on('plotly_hover', function (data) {
             const pointData = data.points[0];
             const imageUrl = pointData.customdata;
@@ -173,6 +172,8 @@
             if (imageUrl) {
                 hoverImage.src = imageUrl;
                 hoverImage.style.display = 'block';
+                hoverImage.style.left = (data.event.clientX + 15) + 'px';
+                hoverImage.style.top = (data.event.clientY + 15) + 'px';
                 isHovering = true;
             }
         });
@@ -181,6 +182,7 @@
             hoverImage.style.display = 'none';
             isHovering = false;
         });
+
 
         visualizationDiv.addEventListener('mousemove', function (event) {
             if (isHovering) {

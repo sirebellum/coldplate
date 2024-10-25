@@ -18,6 +18,7 @@ import tempfile
 import threading
 from flask_socketio import SocketIO, emit, join_room
 import torch
+import random
 
 # Temp files
 tempfile.tempdir = '/tmp'
@@ -63,10 +64,11 @@ kmeans_training_running = False
 
 # Routes
 
-@app.route('/images/<filename>', methods=['GET'])
-def get_image(filename):
+@app.route('/images/<date>/<filename>', methods=['GET'])
+def get_image(date, filename):
+    file_path = os.path.join(IMAGE_DIR, date, filename)
     # Load and upsize the image
-    image = cv2.imread(os.path.join(IMAGE_DIR, filename), cv2.IMREAD_GRAYSCALE)
+    image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
     image = cv2.resize(image, (MLX90640_RESOLUTION_Y*10, MLX90640_RESOLUTION_X*10), interpolation=cv2.INTER_NEAREST)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
     cv2.imwrite(temp_file.name, image)
@@ -88,7 +90,7 @@ def serve_centroids():
     kmeans_file = 'kmeans_deploy.pth'
     kmeans = torch.load(kmeans_file)
     centroids = kmeans.cluster_centers_
-    centroids_int = (centroids * 100000000).astype(np.uint32)
+    centroids_int = (centroids * 65535).astype(np.uint16)
     centroids_bytes = centroids_int.tobytes()
     centroids_base64 = base64.b64encode(centroids_bytes).decode('utf-8')
     return Response(centroids_base64, status=200)
@@ -99,28 +101,26 @@ def centroids_count():
     kmeans = torch.load(kmeans_file)
     return Response(str(kmeans.n_clusters), status=200)
 
-# Get filename
-@app.route('/filename', methods=['GET'])
-def get_filename():
-    filename = str(uuid.uuid4())
-    timestamp = time.time()
-    filename = f"{filename}_{timestamp}.png"
-    return Response(filename, status=200)
-
 # Upload PNG image
 @app.route('/upload_png', methods=['POST'])
 def upload_png():
     try:
         # Get the data from the request
         data = request.json
-        filename = data['filename']
         image = data['image']
 
         # Decode the base64 string
         image = base64.b64decode(image)
 
+        # Generate a unique filename
+        filename = f"{uuid.uuid4()}.png"
+
+        # Save to the directory named simulated
+        simulated_dir = os.path.join(IMAGE_DIR, 'simulated')
+        os.makedirs(simulated_dir, exist_ok=True)
+
         # Save the image
-        file_path = os.path.join(IMAGE_DIR, filename)
+        file_path = os.path.join(simulated_dir, filename)
         with open(file_path, 'wb') as f:
             f.write(image)
 
@@ -135,12 +135,12 @@ def upload_png():
         return Response("Failed to process data", status=500)
 
 # Upload thermal data (integrated with database)
-@app.route('/upload', methods=['GET'])
+@app.route('/upload', methods=['POST'])
 def upload_thermal_data():
     try:
         # Get the data from the request
-        data = request.args.get('data')
-        filename = request.args.get('filename')
+        data = request.json
+        data = data['data']
 
         # Decode the base64 string
         data = base64.b64decode(data)
@@ -157,8 +157,16 @@ def upload_thermal_data():
         # Convert the data to an image
         image = Image.fromarray(np.uint8(normalized_data * 255))
 
+        # Generate a unique filename
+        filename = f"{uuid.uuid4()}.png"
+        
+        # Get the date for the directory
+        date = datetime.now().strftime("%Y-%m-%d")
+        date_dir = os.path.join(IMAGE_DIR, date)
+        os.makedirs(date_dir, exist_ok=True)
+
         # Save the image
-        file_path = os.path.join(IMAGE_DIR, filename)
+        file_path = os.path.join(date_dir, filename)
         image.save(file_path)
 
         # Save reference in the database
@@ -223,7 +231,6 @@ def get_visualization():
 colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan', 'magenta', 'lime', 'teal', 'lavender', 'brown', 'beige', 'maroon', 'mint', 'olive', 'apricot', 'navy', 'grey', 'white', 'black']
 colors_map = {i: color for i, color in enumerate(colors)}
 def get_graph_json(x, y, labels, image_urls):
-    
     # Get the cluster ids
     cluster_ids = labels[0].keys()
 
@@ -279,18 +286,18 @@ def emit_graph():
         time.sleep(5)
     with app.app_context():
         graphing_running = True
-        new_data = ProcessedData.query.all()
-        if len(new_data) == 0:
+        records = ProcessedData.query.all()
+        if len(records) == 0:
             print("No data to graph.")
             graphing_running = False
             return
-        new_data = new_data[:10000]
-        x = [data.encoded_vector[0] for data in new_data]
-        y = [data.encoded_vector[1] for data in new_data]
-        labels = [data.cluster_ids for data in new_data]
-        image_ids = [data.image_id for data in new_data]
+        sampled_items = records[-10000:]
+        x = [data.encoded_vector[0] for data in sampled_items]
+        y = [data.encoded_vector[1] for data in sampled_items]
+        labels = [data.cluster_ids for data in sampled_items]
+        image_ids = [data.image_id for data in sampled_items]
         image_records = ImageRecord.query.filter(ImageRecord.id.in_(image_ids)).all()
-        image_urls = [f"/images/{image.file_path.split('/')[-1]}" for image in image_records]
+        image_urls = [f"/{image.file_path}" for image in image_records]
         graphJSON = get_graph_json(x, y, labels, image_urls)
         graphing_running = False
         print("Graphing complete.")
