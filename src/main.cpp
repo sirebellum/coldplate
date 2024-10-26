@@ -3,7 +3,7 @@
 
 
 // Splash screens
-const uint16_t cat_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
+const uint16_t cat_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {
     {0x0000, 0x0000, 0x0000},
     {0x0000, 0x0000, 0x0000},
     {0x0000, 0x0000, 0x0000},
@@ -53,7 +53,7 @@ const uint16_t cat_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
     {0x0000, 0x0000, 0x0000},
     {0x0000, 0x0000, 0x0000},
 };
-const uint16_t caution_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
+const uint16_t caution_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {
     {0x0000, 0x03C0, 0x0000},
     {0x0000, 0x07E0, 0x0000},
     {0x0000, 0x07E0, 0x0000},
@@ -103,7 +103,7 @@ const uint16_t caution_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
     {0xFFFF, 0xFFFF, 0xFFFF},
     {0x7FFF, 0xFFFF, 0xFFFE},
 };
-const uint16_t snowflake_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {
+const uint16_t snowflake_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {
     {0x0000, 0x0000, 0x0000},
     {0x0000, 0x0180, 0x0000},
     {0x0000, 0x03C0, 0x0000},
@@ -153,10 +153,60 @@ const uint16_t snowflake_splashscreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = 
     {0x0000, 0x0180, 0x0000},
     {0x0000, 0x0000, 0x0000},
 };
+const uint16_t ultra_splashcreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0003, 0x8000},
+    {0x0000, 0x0003, 0xE000},
+    {0x0000, 0x0001, 0xF800},
+    {0x0000, 0x0000, 0x3C00},
+    {0x0000, 0x0004, 0x0F00},
+    {0x0000, 0x000F, 0x0780},
+    {0x0000, 0x0007, 0xC3C0},
+    {0x0000, 0x0001, 0xE1C0},
+    {0x0000, 0x0000, 0xF0E0},
+    {0x0000, 0x000C, 0x3870},
+    {0x0000, 0x001E, 0x1C70},
+    {0x0000, 0x3C0F, 0x8E38},
+    {0x0000, 0x7F83, 0xC718},
+    {0x0000, 0xFFC1, 0xC71C},
+    {0x0000, 0xE1E0, 0xE398},
+    {0x0000, 0xE078, 0x7380},
+    {0x0000, 0xE03C, 0x7000},
+    {0x0000, 0x601E, 0x0000},
+    {0x0000, 0x600E, 0x0000},
+    {0x0000, 0x6007, 0x0000},
+    {0x0000, 0xE003, 0x8000},
+    {0x0001, 0xC003, 0x8000},
+    {0x0003, 0xC001, 0xC000},
+    {0x0007, 0x9801, 0xC000},
+    {0x000F, 0x3801, 0xC000},
+    {0x001E, 0x79FB, 0xC000},
+    {0x003C, 0x63FF, 0x8000},
+    {0x0078, 0x079E, 0x0000},
+    {0x00F0, 0x0E00, 0x0000},
+    {0x01C0, 0x1C00, 0x0000},
+    {0x0180, 0x3800, 0x0000},
+    {0x0380, 0x7000, 0x0000},
+    {0x0381, 0xE000, 0x0000},
+    {0x0383, 0xC000, 0x0000},
+    {0x0387, 0x8000, 0x0000},
+    {0x03FF, 0x0000, 0x0000},
+    {0x03FE, 0x0000, 0x0000},
+    {0x0FE0, 0x0000, 0x0000},
+    {0x1E00, 0x0000, 0x0000},
+    {0x1C00, 0x0000, 0x0000},
+    {0x1800, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+    {0x0000, 0x0000, 0x0000},
+};
 
 // Kmeans centroids
-uint16_t *_centroids = nullptr;
-uint16_t **centroids = &_centroids;
+int16_t *_centroids = nullptr;
+int16_t **centroids = &_centroids;
 uint8_t centroids_count = 0;
 unsigned int centroids_pull_time = 0;
 
@@ -165,13 +215,20 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // Create objects for the IR sensor
 Adafruit_MLX90640 mlx;
-bool mlx_detected = false;
+
+// IR buffers
+int16_t ir_data[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
 
 // Create objects for the sht35 sensor
 Adafruit_SHT31 sht35 = Adafruit_SHT31();
 
-// Create objects for ADC sensing the capacitance of the plate
-int adc_values[ADC_SAMPLES];
+// Vars for food detection
+bool food_detected = false;
+unsigned int food_detect_time = 0;
+
+// Vars for ultrasonic transducer
+unsigned int ultrasonic_on_time = 0;
+unsigned int ultrasonic_off_time = 0;
 
 // Network stuff
 const char* ssid = "Mordor";
@@ -184,116 +241,160 @@ const char* centroidsUrl = "http://192.168.69.9:6969/serve_centroids";
 WiFiClient client;
 HTTPClient http;
 
-// IR buffers
-float ir_data[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
-uint16_t mlx_buffer[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
-
 void setup() {
-    Serial.begin(9600);
+    #if DEBUG
+        Serial.begin(9600);
+    #endif
 
     system_update_cpu_freq(160);
-
     Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(100000);
-
+    Wire.setClock(4000000);
     pinMode(LED_BUILTIN, OUTPUT);
 
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display_splash_screen("Initializing...", caution_splashscreen, &display);
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        DEBUG_PRINTLN("Error: SSD1306 allocation failed.");
+        display_splash_screen("Error: Display Init Fail", caution_splashscreen, &display);
+        while (1){
+            digitalWrite(LED_BUILTIN, HIGH);
+            delay(100);
+            digitalWrite(LED_BUILTIN, LOW);
+            delay(100);
+        }; // Halt execution
+    }
+    display_splash_screen("Initializing...", snowflake_splashscreen, &display);
 
     pwm_init();
-    adc_init();
-
-    pinMode(TEG_PIN, OUTPUT);
-    pinMode(TEG_AUX_PIN, OUTPUT);
-    digitalWrite(TEG_PIN, LOW);
-    digitalWrite(TEG_AUX_PIN, LOW);
+    pin_init();
 
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        display_splash_screen("Connecting to WiFi...", caution_splashscreen, &display);
+    unsigned long startAttemptTime = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 30000) { // 30-second timeout
+        display_splash_screen("Connecting to WiFi...", snowflake_splashscreen, &display);
         delay(500);
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        DEBUG_PRINTLN("Error: Failed to connect to WiFi.");
+        display_splash_screen("Error: WiFi Connect Fail", caution_splashscreen, &display);
+        // Handle WiFi connection failure (e.g., retry or enter offline mode)
     }
 
     centroids_count = pull_centroids(centroids);
+    if (centroids_count < 0) {
+        DEBUG_PRINTLN("Error: Failed to pull centroids.");
+        display_splash_screen("Error: Centroids Pull Fail", caution_splashscreen, &display);
+        centroids_count = 0; // Set to zero to prevent null pointer access
+    }
     centroids_pull_time = millis();
 
-    mlx.begin(MLX90640_I2C_ADDR, &Wire);
+    if (!mlx.begin(MLX90640_I2C_ADDR, &Wire)) {
+        DEBUG_PRINTLN("Error: MLX90640 sensor not found.");
+        display_splash_screen("Error: MLX90640 Init Fail", caution_splashscreen, &display);
+        while (1); // Halt execution
+    }
     mlx.setMode(MLX90640_CHESS);
     mlx.setResolution(MLX90640_ADC_16BIT);
-    mlx.setRefreshRate(MLX90640_1_HZ);
+    mlx.setRefreshRate(MLX90640_2_HZ);
 
-    sht35.begin(0x44);
+    if (!sht35.begin(0x44)) {
+        DEBUG_PRINTLN("Error: SHT35 sensor not found.");
+        display_splash_screen("Error: SHT35 Init Fail", caution_splashscreen, &display);
+        while (1); // Halt execution
+    }
+}
+
+ICACHE_RAM_ATTR void food_detect_isr() {
+    food_detected = true;
+    food_detect_time = millis();
+    DEBUG_PRINTLN("Button pressed");
 }
 
 void loop(void) {
     // Get the IR data
-    mlx.getFrame(ir_data);
-
-    // Convert the IR data to a buffer
-    for (int i = 0; i < MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y; i++) {
-        mlx_buffer[i] = ir_data[i] * 100;
+    int mlx_status = read_ir_sensor(ir_data, &mlx);
+    if (mlx_status != 0) {
+        DEBUG_PRINT("Error: Failed to get IR frame data. Status code: ");
+        DEBUG_PRINTLN(status);
+        display_splash_screen("Error: IR Data Fail", caution_splashscreen, &display);
+        delay(1000);
+        return; // Skip this loop iteration
     }
 
-    // Get temps
-    int32_t water_temp = (int32_t)(sht35.readTemperature() * 100);
-    int32_t hot_temp = calculate_max_temp(mlx_buffer);
-    int32_t cold_temp = calculate_min_temp(mlx_buffer);
-    int32_t temp_diff = hot_temp - cold_temp;
+    // Get temperatures
+    float temp = sht35.readTemperature();
+    if (isnan(temp)) {
+        DEBUG_PRINTLN("Error: Failed to read temperature from SHT35.");
+        display_splash_screen("Error: Water Temp Read Fail", caution_splashscreen, &display);
+        delay(1000);
+        return; // Skip this loop iteration
+    }
+    int16_t water_temp = (int16_t)(temp * TEMP_SCALE);
+    int16_t hot_temp = calculate_max_temp(ir_data);
+    int16_t cold_temp = calculate_min_temp(ir_data);
 
-    // If no temperature gradient, assume no sensor
-    // Use water temp
-    if (temp_diff == 0) {
-        mlx_detected = false;
-        hot_temp = water_temp;
-        cold_temp = TEMP_IDLE;
-        temp_diff = hot_temp - cold_temp;
+    // Upload the data if the data has an actual temperature
+    if (mlx_status == 0 && hot_temp != cold_temp) {
+        if (!upload_thermal_data(ir_data)) {
+            DEBUG_PRINTLN("Error: Failed to upload thermal data.");
+            display_splash_screen("Error: Data Upload Fail", caution_splashscreen, &display);
+            delay(1000);
+        }
+    }
+
+    // Check if it's time to pull the centroids
+    if (millis() - centroids_pull_time > KMEANS_PULL_INTERVAL) {
+        centroids_count = pull_centroids(centroids);
+        if (centroids_count < 0) {
+            DEBUG_PRINTLN("Error: Failed to pull centroids.");
+            display_splash_screen("Error: Centroids Pull Fail", caution_splashscreen, &display);
+            centroids_count = 0; // Set to zero to prevent null pointer access
+        }
+        centroids_pull_time = millis();
+    }
+
+    // Use kmeans clustering to detect cat
+    bool zephyr, flea;
+    if (centroids_count > 0 && hot_temp != cold_temp && *centroids != nullptr) {
+        uint8_t cluster = calculate_kmeans_cluster(ir_data, *centroids, centroids_count);
+        zephyr = cluster == KMEANS_CLASS_ZEPHYR;
+        flea = cluster == KMEANS_CLASS_FLEA;
     } else {
-        mlx_detected = true;
+        zephyr = false;
+        flea = false;
     }
 
-    // If the sensor is detected, upload the data
-    if (mlx_detected) {
-        uploadThermalData(ir_data);
-    }
+    // Kmeans disable
+    zephyr = false;
+    flea = false;
 
-    // Adjust TEG power, pump speed, and fan speed based on temperature readings
-    adjust_teg_power(cold_temp);
+    // Update various components
+    // bool ultrasonic_on = adjust_ultra_sonic(&ultrasonic_on_time, &ultrasonic_off_time, zephyr, flea);
+    bool ultrasonic_on = false;
+    adjust_teg_power(cold_temp, food_detected);
     adjust_aux_teg_power(water_temp);
-    adjust_pump_speed(water_temp);
     adjust_fan_speed(water_temp);
+    adjust_pump_speed(water_temp);
 
-    // Perform kmeans clustering
-    bool cat_detected;
-    if (mlx_detected && *centroids != nullptr) {
-        cat_detected = kmeans_cluster(mlx_buffer, *centroids, centroids_count) > 0;
-    } else {
-        cat_detected = false;
-    }
-
-    // Update the display (1 decimal point)
+    // Message to display
     char hot_temp_str[6];
     char cold_temp_str[6];
     char water_temp_str[6];
-    dtostrf(hot_temp / 100.0, 4, 1, hot_temp_str);
-    dtostrf(cold_temp / 100.0, 4, 1, cold_temp_str);
-    dtostrf(water_temp / 100.0, 4, 1, water_temp_str);
+    dtostrf(hot_temp / TEMP_SCALE, 4, 1, hot_temp_str);
+    dtostrf(cold_temp / TEMP_SCALE, 4, 1, cold_temp_str);
+    dtostrf(water_temp / TEMP_SCALE, 4, 1, water_temp_str);
     String message = String(hot_temp_str) + " " + String(cold_temp_str) + " " + String(water_temp_str);
-    if (cat_detected) {
+
+    // Display the message
+    if (zephyr) {
         display_splash_screen(message, cat_splashscreen, &display);
+    } else if (ultrasonic_on) {
+        display_splash_screen(message, ultra_splashcreen, &display);
     } else {
         display_splash_screen(message, snowflake_splashscreen, &display);
-    }
-
-    // Pull the centroids every 2 hours
-    if (millis() - centroids_pull_time > 7200000) {
-        centroids_count = pull_centroids(centroids);
-        centroids_pull_time = millis();
     }
 }
 
 // Function to pull the latest centroids from the server
-uint8_t pull_centroids(uint16_t **centroids) {
+int pull_centroids(int16_t **centroids) {
     if (WiFi.status() != WL_CONNECTED) {
         DEBUG_PRINTLN("WiFi not connected");
         return -1;
@@ -303,10 +404,10 @@ uint8_t pull_centroids(uint16_t **centroids) {
     http.begin(client, centroidscountUrl);
     DEBUG_PRINTLN("Getting centroids count...");
     int httpResponseCode = http.GET();
-    uint8_t centroids_count;
+    int centroids_count;
     if (httpResponseCode == 200) {
         DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        centroids_count = (uint8_t)http.getString().toInt();
+        centroids_count = (int)http.getString().toInt();
         DEBUG_PRINT("Centroids count: "); DEBUG_PRINTLN(centroids_count);
     } else {
         DEBUG_PRINT("Error on sending GET: ");
@@ -322,8 +423,8 @@ uint8_t pull_centroids(uint16_t **centroids) {
     }
 
     // Allocate memory for the centroids
-    int centroids_size = centroids_count * KMEANS_DIMENSIONALITY * sizeof(uint16_t);
-    *centroids = (uint16_t *)malloc(centroids_size);
+    int centroids_size = centroids_count * KMEANS_DIMENSIONALITY * sizeof(int16_t);
+    *centroids = (int16_t *)malloc(centroids_size);
 
     // Get the centroids
     http.begin(client, centroidsUrl);
@@ -345,7 +446,7 @@ uint8_t pull_centroids(uint16_t **centroids) {
 }
 
 // Function to send MLX90640 data array
-bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUTION_X]) {
+int upload_thermal_data(const int16_t data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUTION_X]) {
     if (WiFi.status() != WL_CONNECTED) {
         DEBUG_PRINTLN("WiFi not connected");
         return false;
@@ -357,7 +458,7 @@ bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUT
     payload += "{\"data\":\"";
 
     // Encode the data to base64
-    size_t byte_size = MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y * sizeof(float);
+    size_t byte_size = MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y * sizeof(int16_t);
     size_t base64_size = 4 * ((byte_size + 2) / 3);
     if (base64_size % 4) {
         base64_size += 4 - (base64_size % 4);
@@ -391,4 +492,3 @@ bool uploadThermalData(const float data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUT
     http.end();
     return true;
 }
-

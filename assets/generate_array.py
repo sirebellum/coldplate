@@ -43,7 +43,7 @@ def image_to_boolean_array(image_path, output_shape=(128, 64), threshold=128, ou
         packed_array.append(packed_row)
 
     # Print packed array for ATmega328p code as hex
-    print("const uint16_t image_array[SPLASH_HEIGHT][SPLASH_WIDTH/16] PROGMEM = {{".format(output_shape[1], output_shape[0]))
+    print("const uint16_t image_array[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {{".format(output_shape[1], output_shape[0]))
     for line in packed_array:
         print("    {" + ", ".join("0x{:04X}".format(byte) for byte in line) + "},")
     print("};")
@@ -52,7 +52,7 @@ def image_to_boolean_array(image_path, output_shape=(128, 64), threshold=128, ou
 
 if __name__ == "__main__":
     # Example usage:
-    image_to_boolean_array("food.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
-    image_to_boolean_array("caution.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
-    image_to_boolean_array("snowflake.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    # image_to_boolean_array("food.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    # image_to_boolean_array("caution.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
+    # image_to_boolean_array("snowflake.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
     image_to_boolean_array("ultrasonic.jpg", output_shape=(48, 48), threshold=200, output_file="output_image.bmp")
