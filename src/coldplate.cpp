@@ -71,226 +71,101 @@ bool pin_init() {
     pinMode(TEG_PIN, OUTPUT);
     pinMode(TEG_AUX_PIN, OUTPUT);
     pinMode(ULTRA_SONIC_PIN, OUTPUT);
-    pinMode(FOOD_DETECT_PIN, INPUT);
+    pinMode(BUTTON_DETECT_PIN, INPUT);
 
     digitalWrite(TEG_PIN, LOW);
     digitalWrite(TEG_AUX_PIN, LOW);
-    digitalWrite(ULTRA_SONIC_PIN, HIGH);
+    digitalWrite(ULTRA_SONIC_PIN, LOW);
 
-    attachInterrupt(digitalPinToInterrupt(FOOD_DETECT_PIN), food_detect_isr, RISING);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_DETECT_PIN), button_detect_isr, RISING);
 
     return true;
 }
 
-// Read the IR sensor data
-int read_ir_sensor(int16_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y], Adafruit_MLX90640 *mlx) {
-    DEBUG_PRINTLN("Reading IR sensor data...");
-    // Read the IR sensor data
-    float *float_buffer = (float *)malloc(sizeof(float) * MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y);
-    int status = mlx->getFrame(float_buffer);
-    if (status != 0) {
-        DEBUG_PRINT("Error: Failed to get IR frame data. Status code: ");
-        DEBUG_PRINTLN(status);
-        free(float_buffer);
-        return status;
+// Function to adjust the coldplate components based on the water temperature
+int adjust_coldplate(int16_t water_temp) {
+    // Adjust the coldplate based on the water temperature
+    if (water_temp < CAT_PAD_TEMP_MIN) {
+        // Turn on the TEG
+        digitalWrite(TEG_PIN, HIGH);
+        digitalWrite(TEG_AUX_PIN, HIGH);
+        return 1;
+    } else if (water_temp > CAT_PAD_TEMP_MAX) {
+        // Turn off the TEG
+        digitalWrite(TEG_PIN, LOW);
+        digitalWrite(TEG_AUX_PIN, LOW);
+        return -1;
+    } else {
+        // Do nothing
+        return 0;
+    }
+}
+
+// Function to adjust the water loop componenets based on the water temperature
+int adjust_water_loop(int16_t water_temp) {
+    // Vary the pump and fan speed based on the water temperature
+    uint8_t fan_speed, pump_speed;
+    if (water_temp < CAT_PAD_TEMP_MIN) {
+        fan_speed = 0;
+        pump_speed = 0;
+    } else if (water_temp > CAT_PAD_TEMP_MAX) {
+        fan_speed = 255;
+        pump_speed = 255;
+    } else {
+        // Linearly interpolate the fan and pump speeds
+        fan_speed = (uint8_t)(255 * (water_temp - CAT_PAD_TEMP_MIN) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN));
+        pump_speed = (uint8_t)(255 * (water_temp - CAT_PAD_TEMP_MIN) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN));
     }
 
-    // Convert float data to uint16_t
-    for (uint16_t i = 0; i < MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y; i++) {
-        data[i] = (int16_t)(float_buffer[i] * TEMP_SCALE);
+    // Set minimum for pump to 10%
+    if (pump_speed < 25) {
+        pump_speed = 25;
     }
 
-    free(float_buffer);
-    DEBUG_PRINTLN("IR sensor data read complete.");
+    // Set the fan and pump speeds
+    analogWrite(PWM_FAN_PIN, fan_speed);
+    analogWrite(PWM_PUMP_PIN, pump_speed);
+
     return 0;
 }
 
-// Adjust the ultrasonic transducer
-bool adjust_ultra_sonic(unsigned int *ultra_sonic_on_time, unsigned int *ultra_sonic_off_time, bool zephyr, bool flea) {
-    DEBUG_PRINT("Adjusting ultrasonic transducer. Zephyr: "); DEBUG_PRINTLN(zephyr);
+// Function to adjust the ultrasonic transducer based on time, zephyr, and flea status
+bool adjust_ultrasonic(unsigned int *ultrasonic_on_time, unsigned int *ultrasonic_off_time, bool zephyr, bool flea) {
+    unsigned long current_time = millis();
 
-    // If zephyr is detected, keep the ultrasonic transducer off
+    // If zephyr is present, turn off
     if (zephyr) {
         digitalWrite(ULTRA_SONIC_PIN, LOW);
-        DEBUG_PRINTLN("Ultrasonic transducer OFF.");
         return false;
     } else if (flea) {
+        // If flea is present, turn on
         digitalWrite(ULTRA_SONIC_PIN, HIGH);
-        DEBUG_PRINTLN("Ultrasonic transducer ON.");
         return true;
     }
 
-    // Adjust the ultrasonic transducer based on the on and off times
-    bool ultrasonic_on = digitalRead(ULTRA_SONIC_PIN);
-    if (ultrasonic_on) {
-        if (millis() - *ultra_sonic_on_time > ULTRASONIC_ON_TIME) {
-            digitalWrite(ULTRA_SONIC_PIN, LOW);
-            *ultra_sonic_off_time = millis();
-            DEBUG_PRINTLN("Ultrasonic transducer OFF.");
-        }
-    } else {
-        if (millis() - *ultra_sonic_off_time > ULTRASONIC_OFF_TIME) {
-            digitalWrite(ULTRA_SONIC_PIN, HIGH);
-            *ultra_sonic_on_time = millis();
-            DEBUG_PRINTLN("Ultrasonic transducer ON.");
-        }
+    // If it is time to turn on the ultrasonic transducer
+    if (current_time - *ultrasonic_off_time > ULTRASONIC_OFF_TIME) {
+        digitalWrite(ULTRA_SONIC_PIN, HIGH);
+        *ultrasonic_on_time = current_time;
+        return true;
+    } else if (current_time - *ultrasonic_on_time > ULTRASONIC_ON_TIME) {
+        // If it is time to turn off
+        digitalWrite(ULTRA_SONIC_PIN, LOW);
+        *ultrasonic_off_time = current_time;
+        return false;
     }
 
     return digitalRead(ULTRA_SONIC_PIN);
 }
 
-// Turn the power on or off of the teg module cooling the plate
-bool adjust_teg_power(int32_t cold_temp, bool food_detected) {
-    DEBUG_PRINT("Adjusting TEG power. Cold temp: "); DEBUG_PRINT(cold_temp);
-
-    // If food detected, keep between TEMP_MIN and TEMP_MAX
-    // Otherwise, keep between TEMP_IDLE_MIN and TEMP_IDLE_MAX
-    if (food_detected) {
-        if (cold_temp > TEMP_MAX) {
-            digitalWrite(TEG_PIN, HIGH);
-            DEBUG_PRINTLN("TEG power ON.");
+// Function to detect class of object in object detection data
+bool detect_object(uint8_t *obj_buffer, uint8_t obj_buffer_len, uint8_t obj_class) {
+    // Check if the object is present in the object detection data
+    for (int i = 0; i < obj_buffer_len; i++) {
+        if (obj_buffer[i] == obj_class) {
             return true;
-        } else if (cold_temp < TEMP_MIN) {
-            digitalWrite(TEG_PIN, LOW);
-            DEBUG_PRINTLN("TEG power OFF.");
-            return false;
-        }
-    } else {
-        if (cold_temp > TEMP_IDLE_MAX) {
-            digitalWrite(TEG_PIN, HIGH);
-            DEBUG_PRINTLN("TEG power ON.");
-            return true;
-        } else if (cold_temp < TEMP_IDLE_MIN) {
-            digitalWrite(TEG_PIN, LOW);
-            DEBUG_PRINTLN("TEG power OFF.");
-            return false;
-        } 
-    }
-
-    return digitalRead(TEG_PIN);
-}
-
-// Turn the power on or off of the auxiliary teg module cooling something else
-bool adjust_aux_teg_power(int32_t water_temp) {
-    DEBUG_PRINT("Adjusting auxiliary TEG power. Water temp: "); DEBUG_PRINT(water_temp);
-
-    // Prioritize main teg over aux teg
-    if (water_temp > CAT_PAD_TEMP_MAX) {
-        digitalWrite(TEG_AUX_PIN, LOW);
-        DEBUG_PRINTLN("Auxiliary TEG power OFF.");
-        return false;
-    } else {
-        digitalWrite(TEG_AUX_PIN, HIGH);
-        DEBUG_PRINTLN("Auxiliary TEG power ON.");
-        return true;
-    }
-}
-
-// Adjust speed of the fan
-uint8_t adjust_fan_speed(int32_t water_temp) {
-    DEBUG_PRINT("Adjusting fan speed. Water temp: "); DEBUG_PRINT(water_temp);
-
-    uint8_t fan_speed = 0;
-    // Set fan speed based on CAT_PAD temps
-    if (water_temp > CAT_PAD_TEMP_MAX) {
-        fan_speed = 255;
-    } else if (water_temp < CAT_PAD_TEMP_MIN) {
-        fan_speed = 0;
-    } else {
-        int32_t scaled_speed = ((water_temp - CAT_PAD_TEMP_MIN) * 255) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN);
-        fan_speed = (uint8_t)(scaled_speed > 255 ? 255 : scaled_speed);
-    }
-
-    analogWrite(PWM_FAN_PIN, fan_speed);
-    DEBUG_PRINT("Fan speed set to: "); DEBUG_PRINTLN(fan_speed);
-    return fan_speed;
-}
-
-// Adjust speed of the pump
-uint8_t adjust_pump_speed(int32_t water_temp) {
-    DEBUG_PRINT("Adjusting pump speed. Water temp: "); DEBUG_PRINT(water_temp);
-
-    uint8_t pump_speed = 0;
-    // Set pump to 100% if water temp is above CAT_PAD_TEMP_MAX
-    if (water_temp > CAT_PAD_TEMP_MAX) {
-        pump_speed = 255;
-    } else if (water_temp < CAT_PAD_TEMP_MIN) {
-        pump_speed = 0;
-    } else {
-        int32_t scaled_speed = ((water_temp - CAT_PAD_TEMP_MIN) * 255) / (CAT_PAD_TEMP_MAX - CAT_PAD_TEMP_MIN);
-        pump_speed = (uint8_t)(scaled_speed > 255 ? 255 : scaled_speed);
-    }
-
-    // Set minimum pump speed to 10%
-    if (pump_speed < 26) {
-        pump_speed = 26;
-    }
-
-    analogWrite(PWM_PUMP_PIN, pump_speed);
-    DEBUG_PRINT("Pump speed set to: "); DEBUG_PRINTLN(pump_speed);
-    return pump_speed;
-}
-
-// Calculate max of an array
-int16_t calculate_max_temp(const int16_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]) {
-    int16_t max_temp = -24000;
-    DEBUG_PRINTLN("Calculating max temperature...");
-    for (uint16_t i = 0; i < MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y; i++) {
-        if (data[i] > max_temp) {
-            max_temp = data[i];
         }
     }
-    DEBUG_PRINT("Max temperature: "); DEBUG_PRINTLN(max_temp);
-    return max_temp;
-}
 
-// Calculate min of an array
-int16_t calculate_min_temp(const int16_t data[MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y]) {
-    int16_t min_temp = 24000;
-    DEBUG_PRINTLN("Calculating min temperature...");
-    for (uint16_t i = 0; i < MLX90640_RESOLUTION_X*MLX90640_RESOLUTION_Y; i++) {
-        if (data[i] < min_temp) {
-            min_temp = data[i];
-        }
-    }
-    DEBUG_PRINT("Min temperature: "); DEBUG_PRINTLN(min_temp);
-    return min_temp;
-}
-
-int16_t calculate_kmeans_cluster(int16_t data[KMEANS_DIMENSIONALITY], int16_t *centroids, uint8_t num_clusters) {
-    uint8_t closest_centroid = 0;
-    uint64_t min_distance = UINT64_MAX;
-
-    DEBUG_PRINTLN("Starting k-means clustering...");
-
-    // Loop through each centroid
-    for (uint16_t i = 0; i < num_clusters; i++) {
-        uint64_t distance = 0;
-
-        // DEBUG_PRINT("Centroid "); DEBUG_PRINT(i); DEBUG_PRINTLN(":");
-
-        // Calculate Euclidean distance squared (to avoid the cost of sqrt)
-        for (uint16_t j = 0; j < KMEANS_DIMENSIONALITY; j++) {
-            int32_t diff = data[j] - centroids[i*KMEANS_DIMENSIONALITY + j];
-            distance += (uint64_t)(diff * diff);
-
-            // DEBUG_PRINT("  Dimension "); DEBUG_PRINT(j); DEBUG_PRINT(": data="); DEBUG_PRINT(data[j]);
-            // DEBUG_PRINT(", scaled_data="); DEBUG_PRINT(scaled_data);
-            // DEBUG_PRINT(", centroid="); DEBUG_PRINT(centroids[i*KMEANS_DIMENSIONALITY + j]);
-            // DEBUG_PRINT(", diff="); DEBUG_PRINT(diff);
-            // DEBUG_PRINT(", distance="); DEBUG_PRINTLN(distance);
-        }
-
-        // Track the centroid with the minimum distance
-        if (distance < min_distance) {
-            min_distance = distance;
-            closest_centroid = i;
-        }
-
-        DEBUG_PRINT("Distance to centroid "); DEBUG_PRINT(i); DEBUG_PRINT(": "); DEBUG_PRINTLN(distance);
-    }
-
-    DEBUG_PRINT("Closest centroid: "); DEBUG_PRINTLN(closest_centroid);
-
-    return closest_centroid;
+    return false;
 }

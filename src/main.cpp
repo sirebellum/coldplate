@@ -204,38 +204,30 @@ const uint16_t ultra_splashcreen[SPLASH_HEIGHT][SPLASH_WIDTH/16] = {
     {0x0000, 0x0000, 0x0000},
 };
 
-// Kmeans centroids
-int16_t *_centroids = nullptr;
-int16_t **centroids = &_centroids;
-uint8_t centroids_count = 0;
-unsigned int centroids_pull_time = 0;
-
 // Create an SSD1306 display object
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
-// Create objects for the IR sensor
-Adafruit_MLX90640 mlx;
-
-// IR buffers
-int16_t ir_data[MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y];
 
 // Create objects for the sht35 sensor
 Adafruit_SHT31 sht35 = Adafruit_SHT31();
 
-// Vars for food detection
-bool food_detected = false;
-unsigned int food_detect_time = 0;
+// Vars for button press
+bool button_detected = false;
+unsigned int button_detect_time = 0;
 
 // Vars for ultrasonic transducer
 unsigned int ultrasonic_on_time = 0;
 unsigned int ultrasonic_off_time = 0;
 
+// Vars for object detection
+uint8_t *_obj_buffer = nullptr;
+uint8_t **obj_buffer = &_obj_buffer;
+uint8_t obj_buffer_len = 0;
+
 // Network stuff
 const char* ssid = "Mordor";
 const char* password = "0ned0esn0tsimplyl0gint0m0rd0r";
-const char* uploadUrl = "http://192.168.69.9:6969/upload";
-const char* centroidscountUrl = "http://192.168.69.9:6969/centroids_count";
-const char* centroidsUrl = "http://192.168.69.9:6969/serve_centroids";
+const char* od_endpoint = "http://192.168.69.11:5000/object_detection";
+const char* od_len_endpoint = "http://192.168.69.11:5000/object_detection_len";
 
 // Create a client
 WiFiClient client;
@@ -278,23 +270,6 @@ void setup() {
         // Handle WiFi connection failure (e.g., retry or enter offline mode)
     }
 
-    centroids_count = pull_centroids(centroids);
-    if (centroids_count < 0) {
-        DEBUG_PRINTLN("Error: Failed to pull centroids.");
-        display_splash_screen("Error: Centroids Pull Fail", caution_splashscreen, &display);
-        centroids_count = 0; // Set to zero to prevent null pointer access
-    }
-    centroids_pull_time = millis();
-
-    if (!mlx.begin(MLX90640_I2C_ADDR, &Wire)) {
-        DEBUG_PRINTLN("Error: MLX90640 sensor not found.");
-        display_splash_screen("Error: MLX90640 Init Fail", caution_splashscreen, &display);
-        while (1); // Halt execution
-    }
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setResolution(MLX90640_ADC_16BIT);
-    mlx.setRefreshRate(MLX90640_2_HZ);
-
     if (!sht35.begin(0x44)) {
         DEBUG_PRINTLN("Error: SHT35 sensor not found.");
         display_splash_screen("Error: SHT35 Init Fail", caution_splashscreen, &display);
@@ -302,23 +277,13 @@ void setup() {
     }
 }
 
-ICACHE_RAM_ATTR void food_detect_isr() {
-    food_detected = true;
-    food_detect_time = millis();
+ICACHE_RAM_ATTR void button_detect_isr() {
+    button_detected = true;
+    button_detect_time = millis();
     DEBUG_PRINTLN("Button pressed");
 }
 
 void loop(void) {
-    // Get the IR data
-    int mlx_status = read_ir_sensor(ir_data, &mlx);
-    if (mlx_status != 0) {
-        DEBUG_PRINT("Error: Failed to get IR frame data. Status code: ");
-        DEBUG_PRINTLN(status);
-        display_splash_screen("Error: IR Data Fail", caution_splashscreen, &display);
-        delay(1000);
-        return; // Skip this loop iteration
-    }
-
     // Get temperatures
     float temp = sht35.readTemperature();
     if (isnan(temp)) {
@@ -328,167 +293,90 @@ void loop(void) {
         return; // Skip this loop iteration
     }
     int16_t water_temp = (int16_t)(temp * TEMP_SCALE);
-    int16_t hot_temp = calculate_max_temp(ir_data);
-    int16_t cold_temp = calculate_min_temp(ir_data);
 
-    // Upload the data if the data has an actual temperature
-    if (mlx_status == 0 && hot_temp != cold_temp) {
-        if (!upload_thermal_data(ir_data)) {
-            DEBUG_PRINTLN("Error: Failed to upload thermal data.");
-            display_splash_screen("Error: Data Upload Fail", caution_splashscreen, &display);
-            delay(1000);
-        }
+    // Perform object detection
+    int obj_detect_status = obj_detect_via_web(*obj_buffer);
+    if (obj_detect_status != 0) {
+        DEBUG_PRINTLN("Error: Failed to get object detection data.");
+        display_splash_screen("Error: Object Detect Fail", caution_splashscreen, &display);
+        delay(1000);
+        return; // Skip this loop iteration
     }
+    bool zephyr_present = detect_object(*obj_buffer, obj_buffer_len, OBJ_ZEPHYR);
+    bool flea_present = detect_object(*obj_buffer, obj_buffer_len, OBJ_FLEA);
 
-    // Check if it's time to pull the centroids
-    if (millis() - centroids_pull_time > KMEANS_PULL_INTERVAL) {
-        centroids_count = pull_centroids(centroids);
-        if (centroids_count < 0) {
-            DEBUG_PRINTLN("Error: Failed to pull centroids.");
-            display_splash_screen("Error: Centroids Pull Fail", caution_splashscreen, &display);
-            centroids_count = 0; // Set to zero to prevent null pointer access
-        }
-        centroids_pull_time = millis();
-    }
-
-    // Use kmeans clustering to detect cat
-    bool zephyr, flea;
-    if (centroids_count > 0 && hot_temp != cold_temp && *centroids != nullptr) {
-        uint8_t cluster = calculate_kmeans_cluster(ir_data, *centroids, centroids_count);
-        zephyr = cluster == KMEANS_CLASS_ZEPHYR;
-        flea = cluster == KMEANS_CLASS_FLEA;
-    } else {
-        zephyr = false;
-        flea = false;
-    }
-
-    // Kmeans disable
-    zephyr = false;
-    flea = false;
-
-    // Update various components
-    // bool ultrasonic_on = adjust_ultra_sonic(&ultrasonic_on_time, &ultrasonic_off_time, zephyr, flea);
-    bool ultrasonic_on = false;
-    adjust_teg_power(cold_temp, food_detected);
-    adjust_aux_teg_power(water_temp);
-    adjust_fan_speed(water_temp);
-    adjust_pump_speed(water_temp);
+    // Update coldplate components
+    adjust_coldplate(water_temp);
+    adjust_water_loop(water_temp);
+    bool ultrasonic_on = adjust_ultrasonic(&ultrasonic_on_time, &ultrasonic_off_time, zephyr_present, flea_present);
 
     // Message to display
-    char hot_temp_str[6];
-    char cold_temp_str[6];
     char water_temp_str[6];
-    dtostrf(hot_temp / TEMP_SCALE, 4, 1, hot_temp_str);
-    dtostrf(cold_temp / TEMP_SCALE, 4, 1, cold_temp_str);
     dtostrf(water_temp / TEMP_SCALE, 4, 1, water_temp_str);
-    String message = String(hot_temp_str) + " " + String(cold_temp_str) + " " + String(water_temp_str);
+    String message = "Water Temp: " + String(water_temp_str) + "C";
 
     // Display the message
-    if (zephyr) {
-        display_splash_screen(message, cat_splashscreen, &display);
-    } else if (ultrasonic_on) {
+    if (ultrasonic_on) {
         display_splash_screen(message, ultra_splashcreen, &display);
     } else {
         display_splash_screen(message, snowflake_splashscreen, &display);
     }
 }
 
-// Function to pull the latest centroids from the server
-int pull_centroids(int16_t **centroids) {
+// Function to pull object detection data from the web
+int obj_detect_via_web(uint8_t *obj_buffer) {
     if (WiFi.status() != WL_CONNECTED) {
-        DEBUG_PRINTLN("WiFi not connected");
+        DEBUG_PRINTLN("Error: WiFi not connected.");
         return -1;
     }
 
-    // Get the number of centroids
-    http.begin(client, centroidscountUrl);
-    DEBUG_PRINTLN("Getting centroids count...");
-    int httpResponseCode = http.GET();
-    int centroids_count;
-    if (httpResponseCode == 200) {
-        DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        centroids_count = (int)http.getString().toInt();
-        DEBUG_PRINT("Centroids count: "); DEBUG_PRINTLN(centroids_count);
-    } else {
-        DEBUG_PRINT("Error on sending GET: ");
-        DEBUG_PRINTLN(httpResponseCode);
+    // Get the len of the object detection data
+    http.begin(client, od_len_endpoint);
+    int httpCode = http.GET();
+    if (httpCode != 200) {
+        DEBUG_PRINT("Error: HTTP GET failed with code ");
+        DEBUG_PRINTLN(httpCode);
         http.end();
         return -1;
+    } else {
+        DEBUG_PRINTLN("HTTP GET successful.");
     }
+    String payload = http.getString();
+    obj_buffer_len = payload.toInt();
     http.end();
 
-    // Deallocate memory if it exists
-    if (*centroids != nullptr) {
-        free(*centroids);
-    }
-
-    // Allocate memory for the centroids
-    int centroids_size = centroids_count * KMEANS_DIMENSIONALITY * sizeof(int16_t);
-    *centroids = (int16_t *)malloc(centroids_size);
-
-    // Get the centroids
-    http.begin(client, centroidsUrl);
-    DEBUG_PRINTLN("Getting centroids...");
-    httpResponseCode = http.GET();
-    if (httpResponseCode == 200) {
-        DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-        DEBUG_PRINTLN("Centroids pulled successfully.");
-        DEBUG_PRINT("Centroids count: "); DEBUG_PRINTLN(centroids_size);
-    } else {
-        DEBUG_PRINT("Error on sending GET: ");
-        DEBUG_PRINTLN(httpResponseCode);
-        http.end();
+    if (obj_buffer_len <= 0) {
+        DEBUG_PRINTLN("Error: Invalid object detection data length.");
         return -1;
     }
-    http.end();
 
-    return centroids_count;
-}
+    // Allocate memory for the base64-encoded object detection data
+    unsigned int base64_len = encode_base64_length(obj_buffer_len);
+    unsigned char *base64_obj_buffer = (unsigned char *)malloc(base64_len);
 
-// Function to send MLX90640 data array
-int upload_thermal_data(const int16_t data[MLX90640_RESOLUTION_Y * MLX90640_RESOLUTION_X]) {
-    if (WiFi.status() != WL_CONNECTED) {
-        DEBUG_PRINTLN("WiFi not connected");
-        return false;
-    }
-
-    // Prepare data for POST
-    String postUrl = uploadUrl;
-    String payload;
-    payload += "{\"data\":\"";
-
-    // Encode the data to base64
-    size_t byte_size = MLX90640_RESOLUTION_X * MLX90640_RESOLUTION_Y * sizeof(int16_t);
-    size_t base64_size = 4 * ((byte_size + 2) / 3);
-    if (base64_size % 4) {
-        base64_size += 4 - (base64_size % 4);
-    }
-    unsigned char *encodedData = (unsigned char *)malloc(base64_size + 1);
-    encode_base64((unsigned char*)data, byte_size, encodedData);
-
-    // Add encoded data to the payload
-    payload += String((char*)encodedData);
-    payload += "\"}";
-
-    // Send POST request
-    http.begin(client, postUrl);
-    http.addHeader("Content-Type", "application/json");
-    DEBUG_PRINTLN("Uploading thermal data...");
-    int httpResponseCode = http.POST(payload);
-    if (httpResponseCode == 200) {
-        DEBUG_PRINT("HTTP Response: "); DEBUG_PRINTLN(httpResponseCode);
-    } else {
-        DEBUG_PRINT("Error on sending POST: ");
-        DEBUG_PRINTLN(httpResponseCode);
-        // Deallocate
-        free(encodedData);
+    // Get the object detection data
+    http.begin(client, od_endpoint);
+    httpCode = http.GET();
+    if (httpCode != 200) {
+        DEBUG_PRINT("Error: HTTP GET failed with code ");
+        DEBUG_PRINTLN(httpCode);
         http.end();
-        return false;
+        return -1;
+    } else {
+        DEBUG_PRINTLN("HTTP GET successful.");
+    }
+    http.getStreamPtr()->readBytes(base64_obj_buffer, base64_len);
+    http.end();
+
+    // Decode the base64-encoded object detection data
+    unsigned int decoded_len = decode_base64(base64_obj_buffer, base64_len, obj_buffer);
+    free(base64_obj_buffer);
+
+    // Make sure the decoded length matches the expected length
+    if (decoded_len != obj_buffer_len) {
+        DEBUG_PRINTLN("Error: Decoded object detection data length mismatch.");
+        return -1;
     }
 
-    DEBUG_PRINTLN("Thermal data upload complete.");
-    // Deallocate
-    free(encodedData);
-    http.end();
-    return true;
+    return 0;
 }
