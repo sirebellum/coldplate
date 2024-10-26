@@ -16,7 +16,7 @@
             flex-direction: column;
             height: 100vh;
         }
-
+    
         #controls {
             display: flex;
             justify-content: flex-start;
@@ -26,9 +26,8 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             z-index: 2000;
         }
-
+    
         #controls button {
-            background-color: #007bff;
             color: white;
             border: none;
             padding: 10px 15px;
@@ -38,34 +37,54 @@
             transition: background-color 0.3s ease;
             font-size: 14px;
         }
-
+    
+        #train-button {
+            background-color: #28a745; /* Green */
+        }
+    
+        #process-button {
+            background-color: #ffc107; /* Yellow */
+        }
+    
+        #update-button {
+            background-color: #17a2b8; /* Teal */
+        }
+    
+        #apply-class-button {
+            background-color: #6c757d; /* Gray */
+        }
+    
+        #train-kmeans-button {
+            background-color: #d63384; /* Pink */
+        }
+    
         #controls select {
             padding: 10px;
             margin-right: 10px;
             border-radius: 5px;
             font-size: 14px;
         }
-
+    
         #controls button:hover {
-            background-color: #0056b3;
+            opacity: 0.9; /* Slightly dim on hover */
         }
-
+    
         #controls button:focus {
             outline: none;
         }
-
+    
         #visualization-container {
             display: flex;
             flex-direction: row; /* Horizontal layout */
         }
-
+    
         #visualization {
             flex: 3;
             resize: both;
             overflow: auto;
             border: 1px solid #ccc;
         }
-
+    
         #selected-images-container {
             flex: 1;
             padding: 10px;
@@ -74,7 +93,7 @@
             border-left: 1px solid #ccc;
             height: calc(100vh - 50px); /* Ensure it occupies the full height minus the controls */
         }
-
+    
         #selected-images img {
             width: 80px;
             height: 80px;
@@ -83,15 +102,15 @@
             border: 2px solid #007bff;
             border-radius: 5px;
         }
-
+    
         #selected-images img:hover {
             border-color: red;
         }
-
+    
         #selected-images h3 {
             margin-top: 0;
         }
-
+    
         #hover-image {
             position: absolute;
             max-width: 400px;
@@ -101,7 +120,7 @@
             pointer-events: none;
             z-index: 1000;
         }
-    </style>
+    </style>    
 </head>
 
 <body>
@@ -141,7 +160,7 @@
         const statusIndicator = document.getElementById('status-indicator');
         const selectedPoints = [];
         const selectedImagesContainer = document.getElementById('selected-images');
-
+    
         // Initialize Plotly with empty data
         const initialData = [{
             x: [],
@@ -155,41 +174,60 @@
             xaxis: { title: 'PC 1' },
             yaxis: { title: 'PC 2' }
         };
-
+    
         Plotly.newPlot('visualization', initialData, layout);
-
+    
         // Listen for graph updates
         socket.on('update_graph', function (graphJSON) {
             console.log("Received graph data:", graphJSON);
             const plotData = JSON.parse(graphJSON);
             Plotly.react('visualization', plotData.data, plotData.layout);
         });
-
+    
         visualizationDiv.on('plotly_hover', function (data) {
             const pointData = data.points[0];
             const imageUrl = pointData.customdata;
-
+    
             if (imageUrl) {
                 hoverImage.src = imageUrl;
                 hoverImage.style.display = 'block';
-                hoverImage.style.left = (data.event.clientX + 15) + 'px';
-                hoverImage.style.top = (data.event.clientY + 15) + 'px';
+                positionHoverImage(data.event.clientX, data.event.clientY);
                 isHovering = true;
             }
         });
-
+    
         visualizationDiv.on('plotly_unhover', function () {
             hoverImage.style.display = 'none';
             isHovering = false;
         });
-
-
+    
         visualizationDiv.addEventListener('mousemove', function (event) {
             if (isHovering) {
-                hoverImage.style.left = (event.clientX + 15) + 'px';
-                hoverImage.style.top = (event.clientY + 15) + 'px';
+                positionHoverImage(event.clientX, event.clientY);
             }
         });
+    
+        function positionHoverImage(x, y) {
+            const hoverPadding = 15;
+            const maxWidth = hoverImage.offsetWidth;
+            const maxHeight = hoverImage.offsetHeight;
+    
+            let leftPosition = x + hoverPadding;
+            let topPosition = y + hoverPadding;
+    
+            // Check if the hover image goes out of the right boundary
+            if (leftPosition + maxWidth > window.innerWidth) {
+                leftPosition = x - maxWidth - hoverPadding;
+            }
+    
+            // Check if the hover image goes out of the bottom boundary
+            if (topPosition + maxHeight > window.innerHeight) {
+                topPosition = y - maxHeight - hoverPadding;
+            }
+    
+            hoverImage.style.left = leftPosition + 'px';
+            hoverImage.style.top = topPosition + 'px';
+        }
 
         // Listen for status updates from the server
         socket.on('status_response', function (statusData) {
@@ -320,6 +358,12 @@
         setInterval(() => {
             socket.emit('get_db_info');
         }, 100);
+
+        // Update the graph when the page loads and at regular intervals
+        socket.emit('update_graph');
+        setInterval(() => {
+            socket.emit('update_graph');
+        }, 5000);
 
     </script>
 </body>

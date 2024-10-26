@@ -69,7 +69,7 @@ def get_image(date, filename):
     file_path = os.path.join(IMAGE_DIR, date, filename)
     # Load and upsize the image
     image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (MLX90640_RESOLUTION_Y*10, MLX90640_RESOLUTION_X*10), interpolation=cv2.INTER_NEAREST)
+    image = cv2.resize(image, (MLX90640_RESOLUTION_X*10, MLX90640_RESOLUTION_Y*10), interpolation=cv2.INTER_NEAREST)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
     cv2.imwrite(temp_file.name, image)
     return send_from_directory(tempfile.gettempdir(), os.path.basename(temp_file.name))
@@ -146,10 +146,13 @@ def upload_thermal_data():
         data = base64.b64decode(data)
 
         # Unpack the data
-        unpacked_data = struct.unpack(f'{DATA_SIZE}f', data)
+        unpacked_data = struct.unpack(f'{DATA_SIZE}H', data)
 
         # Reshape the data
         reshaped_data = np.array(unpacked_data).reshape((MLX90640_RESOLUTION_Y, MLX90640_RESOLUTION_X))
+
+        # Flip the data vertically
+        reshaped_data = np.flipud(reshaped_data)
 
         # Normalize the data
         normalized_data = (reshaped_data - reshaped_data.min()) / (reshaped_data.max() - reshaped_data.min())
@@ -224,7 +227,6 @@ def run_kmeans_training():
 # Endpoint for Visualization
 @app.route('/visualization', methods=['GET'])
 def get_visualization():
-    socketio.start_background_task(emit_graph)
     return render_template("visualization.html")
 
 # High contrast colors

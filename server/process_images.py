@@ -3,8 +3,8 @@ import cv2
 import torch
 from models import Session, ImageRecord, ProcessedData
 from ML.construct_model import CNNAutoencoder
-from MulticoreTSNE import MulticoreTSNE as TSNE
 import os
+from MulticoreTSNE import MulticoreTSNE as TSNE
 
 
 IR_X = 32
